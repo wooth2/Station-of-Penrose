@@ -155,11 +155,28 @@ fbxLoader.load(
 
     scene.add(astroFBX);
 
-    console.log('Astronaut FBX 로드 완료 (by 조원희)');
+    console.log('Astronaut FBX 로드 완료');
+
+    // ----------- GUI 스케일 조절 추가 -------------
+    const fbxFolder = gui.addFolder('FBX Astronaut');
+
+    const fbxParams = {
+      scale: 0.01, // 초기값 (위에서 setScalar 한 값)
+    };
+
+    // scale slider
+    fbxFolder
+      .add(fbxParams, 'scale', 0.001, 1.0, 0.001)
+      .name('Scale')
+      .onChange((v) => {
+        if (astroFBX) astroFBX.scale.setScalar(v);
+      });
+
+    fbxFolder.open();
   },
   undefined,
   (error) => {
-    console.error('Astronaut FBX 로드 실패 (by 조원희)', error);
+    console.error('Astronaut FBX 로드 실패', error);
   }
 );
 
