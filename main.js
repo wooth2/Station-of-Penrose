@@ -138,35 +138,30 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
   console.log('Astronaut 모델 로드 완료');
 });
 
-// 1) 우주인 모델 (FBX 버전, y=0 고정) by 조원희
+// 1) 우주인 모델 by 조원희
 const fbxLoader = new FBXLoader();
-fbxLoader.load('./models/astronaut.fbx', (fbx) => {
-  const astro = setupModel(fbx);
 
-  // 우주인 기본 위치 y=0
-  astro.position.set(-4, 0, 0);
-  scene.add(astro);
+fbxLoader.load(
+  './models/astronaut.fbx',
+  (fbx) => {
+    // 새 우주인 Object3D
+    const astroFBX = setupModel(fbx);
 
-  // 카메라 세팅 astro 크기 기준으로 (기존 코드 거의 그대로 재사용)
-  const astroBox = new THREE.Box3().setFromObject(astro);
-  const astroSize = astroBox.getSize(new THREE.Vector3());
-  const sizeLen = astroSize.length();
+    // FBX가 너무 크면 스케일 줄이기
+    astroFBX.scale.setScalar(0.01);
 
-  camera.near = sizeLen / 100;
-  camera.far = sizeLen * 100;
-  camera.updateProjectionMatrix();
+    // 기존 GLB 우주인은 (0,0,0), 이 우주인은 왼쪽으로 -4
+    astroFBX.position.set(-4, 0, 0);
 
-  const camPos = new THREE.Vector3(
-    sizeLen,
-    sizeLen * 0.6,
-    sizeLen
-  );
-  camera.position.copy(camPos);
-  orbitControls.target.set(0, astroSize.y / 2, 0);
-  orbitControls.update();
+    scene.add(astroFBX);
 
-  console.log('Astronaut FBX 로드 완료');
-});
+    console.log('Astronaut FBX 로드 완료 (by 조원희)');
+  },
+  undefined,
+  (error) => {
+    console.error('Astronaut FBX 로드 실패 (by 조원희)', error);
+  }
+);
 
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
