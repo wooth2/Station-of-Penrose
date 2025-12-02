@@ -139,46 +139,27 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
 });
 
 // 1) 우주인 모델 by 조원희
+let astroFBX;
 const fbxLoader = new FBXLoader();
 
 fbxLoader.load(
   './models/astronaut.fbx',
   (fbx) => {
-    // 새 우주인 Object3D
-    const astroFBX = setupModel(fbx);
+    astroFBX = setupModel(fbx);
 
-    // FBX가 너무 크면 스케일 줄이기
     astroFBX.scale.setScalar(0.01);
-
-    // 기존 GLB 우주인은 (0,0,0), 이 우주인은 왼쪽으로 -4
     astroFBX.position.set(-4, 0, 0);
 
     scene.add(astroFBX);
 
     console.log('Astronaut FBX 로드 완료');
-
-    // ----------- GUI 스케일 조절 추가 -------------
-    const fbxFolder = gui.addFolder('FBX Astronaut');
-
-    const fbxParams = {
-      scale: 0.01, // 초기값 (위에서 setScalar 한 값)
-    };
-
-    // scale slider
-    fbxFolder
-      .add(fbxParams, 'scale', 0.001, 1.0, 0.001)
-      .name('Scale')
-      .onChange((v) => {
-        if (astroFBX) astroFBX.scale.setScalar(v);
-      });
-
-    fbxFolder.open();
   },
   undefined,
   (error) => {
     console.error('Astronaut FBX 로드 실패', error);
   }
 );
+
 
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
@@ -203,6 +184,7 @@ const renderParams = {
   showPlane: true,
   ambientIntensity: 1.2,
   dirIntensity: 0.8,
+  renderParams.fbxScale = 0.001;
 };
 
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
@@ -220,6 +202,11 @@ gui.add(renderParams, 'showAxes').onChange((v) => {
 gui.add(renderParams, 'showPlane').onChange((v) => {
   plane.visible = v;
 });
+gui.add(renderParams, 'fbxScale', 0.0001, 1.0, 0.001)
+  .name('FBX Scale')
+  .onChange(v => {
+    if (astroFBX) astroFBX.scale.setScalar(v);
+  });
 
 // ------- 렌더 루프 -------
 function render() {
