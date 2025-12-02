@@ -139,83 +139,55 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
 });
 
 // 1) 우주인 모델 by 조원희
-let astroFBX;
-let astroMixer;            // 애니메이션 재생기
-const astroActions = {};   // idle / walk 등 저장
-let currentAction;         // 현재 재생 중인 액션
-const clock = new THREE.Clock(); // 렌더 루프에서 delta 시간 계산용
 const fbxLoader = new FBXLoader();
 
-fbxLoader.load(
-  './models/Standing W_Briefcase Idle.fbx', // ★ 여기: 애니메이션 들어있는 새 Idle 파일 경로
-  (fbx) => {
-    astroFBX = setupModel(fbx);
-
-    astroFBX.scale.setScalar(0.02);
-    astroFBX.position.set(-3, -0.01, 0);
-
-    scene.add(astroFBX);
-
-    astroMixer = new THREE.AnimationMixer(astroFBX);
-
-    const clip = fbx.animations[0];
-    const action = astroMixer.clipAction(clip);
-    astroActions.idle = action;
-    currentAction = action;
-
-    action.play();
-    console.log('Idle FBX 하나로 애니메이션 재생 시작');
-  },
-  undefined,
-  (error) => {
-    console.error('Idle FBX 로드 실패', error);
-  }
-);
-/*
+// 리깅된 T자 포즈 astronaut.fbx 로드 (With Skin)
 fbxLoader.load(
   './models/astronaut.fbx',
   (fbx) => {
-    astroFBX = setupModel(fbx);
+    astroFBX = setupModel(fbx);  // 메시+본 모두 포함
 
     astroFBX.scale.setScalar(0.02);
     astroFBX.position.set(-3, -0.01, 0);
 
     scene.add(astroFBX);
+
     astroMixer = new THREE.AnimationMixer(astroFBX);
-    console.log('Astronaut FBX 로드 완료');
-    
+
+    console.log('Test 1843 : Astronaut 베이스 로드 완료, idle 애니메이션 로드 시도');
+
+    // --- Idle 애니메이션 (Without Skin)에서 클립만 빼오기 ---
     const idleLoader = new FBXLoader();
-    console.log('Idle 애니메이션 로딩 시도');
     idleLoader.load(
-      './models/Standing W_Briefcase Idle.fbx',
-      (fbx) => {
-        console.log('Idle 애니메이션 로드 성공', fbx);
-  
-        const clip = fbx.animations[0];
+      './models/Standing W_Briefcase Idle.fbx',   // 스킨 없는 Idle 파일
+      (idleFBX) => {
+        console.log('Idle 애니메이션 로드 성공', idleFBX);
+
+        const clip = idleFBX.animations[0];
         if (!clip) {
-          console.warn('Idle FBX 안에 animations[0]이 없음');
+          console.warn('Idle FBX에 animations[0] 없음');
           return;
         }
-  
-        const action = astroMixer.clipAction(clip);
-        astroActions.idle = action;
-        currentAction = action;
-  
-        action.play();
+
+        const idleAction = astroMixer.clipAction(clip);
+        astroActions.idle = idleAction;
+        currentAction = idleAction;
+
+        idleAction.play();
         console.log('Idle 애니메이션 재생 시작');
       },
       undefined,
       (error) => {
         console.error('Idle 애니메이션 로드 실패', error);
       }
-    )
+    );
   },
   undefined,
   (error) => {
-    console.error('Astronaut FBX 로드 실패', error);
+    console.error('Astronaut 베이스 로드 실패', error);
   }
 );
-*/
+
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
   const block = setupModel(gltf.scene);
