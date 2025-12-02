@@ -149,7 +149,6 @@ const fbxLoader = new FBXLoader();
 
 // 리깅된 T자 포즈 astronaut.fbx 로드 (With Skin)
 fbxLoader.load(
-  console.log('Test 1848');
   './models/astronaut.fbx',
   (fbx) => {
     astroFBX = setupModel(fbx);  // 메시+본 모두 포함
@@ -161,7 +160,7 @@ fbxLoader.load(
 
     astroMixer = new THREE.AnimationMixer(astroFBX);
 
-    console.log('Astronaut 베이스 로드 완료, idle 애니메이션 로드 시도');
+    console.log('Test 1848 : Astronaut 베이스 로드 완료, idle 애니메이션 로드 시도');
 
     // --- Idle 애니메이션 (Without Skin)에서 클립만 빼오기 ---
     const idleLoader = new FBXLoader();
