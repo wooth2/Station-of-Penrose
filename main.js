@@ -156,48 +156,39 @@ fbxLoader.load(
 
     scene.add(astroFBX);
     astroMixer = new THREE.AnimationMixer(astroFBX);
-    loadIdleAnimation();
-
     console.log('Astronaut FBX 로드 완료');
+    
+    const idleLoader = new FBXLoader();
+    console.log('Idle 애니메이션 로딩 시도');
+    idleLoader.load(
+      './models/Standing W_Briefcase Idle.fbx',
+      (fbx) => {
+        console.log('Idle 애니메이션 로드 성공', fbx);
+  
+        const clip = fbx.animations[0];
+        if (!clip) {
+          console.warn('Idle FBX 안에 animations[0]이 없음');
+          return;
+        }
+  
+        const action = astroMixer.clipAction(clip);
+        astroActions.idle = action;
+        currentAction = action;
+  
+        action.play();
+        console.log('Idle 애니메이션 재생 시작');
+      },
+      undefined,
+      (error) => {
+        console.error('Idle 애니메이션 로드 실패', error);
+      }
+    )
   },
   undefined,
   (error) => {
     console.error('Astronaut FBX 로드 실패', error);
   }
 );
-
-// 캐릭터 애니메이션 불러오는 함수
-function loadIdleAnimation() {
-  const idleLoader = new FBXLoader();
-
-  console.log('Idle 애니메이션 로딩 시도');
-
-  idleLoader.load(
-    './models/Standing W_Briefcase Idle.fbx',  // 파일 이름/경로 정확히 맞춰
-    (fbx) => {
-      console.log('Idle 애니메이션 로드 성공', fbx);
-
-      const clip = fbx.animations[0];
-      if (!clip) {
-        console.warn('Idle FBX 안에 animations[0]이 없음');
-        return;
-      }
-
-      const action = astroMixer.clipAction(clip);
-      astroActions.idle = action;
-      currentAction = action;
-
-      action.play();
-      console.log('Idle 애니메이션 재생 시작');
-    },
-    undefined,
-    (error) => {
-      console.error('Idle 애니메이션 로드 실패', error);
-    }
-  );
-}
-
-
 
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
