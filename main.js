@@ -147,6 +147,32 @@ const clock = new THREE.Clock(); // 렌더 루프에서 delta 시간 계산용
 const fbxLoader = new FBXLoader();
 
 fbxLoader.load(
+  './models/Standing W_Briefcase Idle.fbx', // ★ 여기: 애니메이션 들어있는 새 Idle 파일 경로
+  (fbx) => {
+    astroFBX = setupModel(fbx);
+
+    astroFBX.scale.setScalar(0.02);
+    astroFBX.position.set(-3, -0.01, 0);
+
+    scene.add(astroFBX);
+
+    astroMixer = new THREE.AnimationMixer(astroFBX);
+
+    const clip = fbx.animations[0];
+    const action = astroMixer.clipAction(clip);
+    astroActions.idle = action;
+    currentAction = action;
+
+    action.play();
+    console.log('Idle FBX 하나로 애니메이션 재생 시작');
+  },
+  undefined,
+  (error) => {
+    console.error('Idle FBX 로드 실패', error);
+  }
+);
+/*
+fbxLoader.load(
   './models/astronaut.fbx',
   (fbx) => {
     astroFBX = setupModel(fbx);
@@ -189,7 +215,7 @@ fbxLoader.load(
     console.error('Astronaut FBX 로드 실패', error);
   }
 );
-
+*/
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
   const block = setupModel(gltf.scene);
