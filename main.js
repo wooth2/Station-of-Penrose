@@ -10,6 +10,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+
 
 // ------- 기본 세팅 -------
 const scene = new THREE.Scene();
@@ -133,6 +136,36 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
   orbitControls.update();
 
   console.log('Astronaut 모델 로드 완료');
+});
+
+// 1) 우주인 모델 (FBX 버전, y=0 고정) by 조원희
+const fbxLoader = new FBXLoader();
+fbxLoader.load('./models/astronaut.fbx', (fbx) => {
+  const astro = setupModel(fbx);
+
+  // 우주인 기본 위치 y=0
+  astro.position.set(-4, 0, 0);
+  scene.add(astro);
+
+  // 카메라 세팅 astro 크기 기준으로 (기존 코드 거의 그대로 재사용)
+  const astroBox = new THREE.Box3().setFromObject(astro);
+  const astroSize = astroBox.getSize(new THREE.Vector3());
+  const sizeLen = astroSize.length();
+
+  camera.near = sizeLen / 100;
+  camera.far = sizeLen * 100;
+  camera.updateProjectionMatrix();
+
+  const camPos = new THREE.Vector3(
+    sizeLen,
+    sizeLen * 0.6,
+    sizeLen
+  );
+  camera.position.copy(camPos);
+  orbitControls.target.set(0, astroSize.y / 2, 0);
+  orbitControls.update();
+
+  console.log('Astronaut FBX 로드 완료');
 });
 
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
