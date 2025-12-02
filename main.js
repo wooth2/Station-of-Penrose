@@ -147,7 +147,7 @@ fbxLoader.load(
   (fbx) => {
     astroFBX = setupModel(fbx);
 
-    astroFBX.scale.setScalar(renderParams.fbxScale);
+    astroFBX.scale.setScalar(0.02);
     astroFBX.position.set(-3, -0.01, 0);
 
     scene.add(astroFBX);
