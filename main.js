@@ -147,8 +147,8 @@ fbxLoader.load(
   (fbx) => {
     astroFBX = setupModel(fbx);
 
-    astroFBX.scale.setScalar(0.01);
-    astroFBX.position.set(-4, 0, 0);
+    astroFBX.scale.setScalar(0.02);
+    astroFBX.position.set(-3, -0.01, 0);
 
     scene.add(astroFBX);
 
@@ -184,7 +184,7 @@ const renderParams = {
   showPlane: true,
   ambientIntensity: 1.2,
   dirIntensity: 0.8,
-  renderParams.fbxScale = 0.001;
+  renderParams.fbxScale = 0.02;
 };
 
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
@@ -202,7 +202,7 @@ gui.add(renderParams, 'showAxes').onChange((v) => {
 gui.add(renderParams, 'showPlane').onChange((v) => {
   plane.visible = v;
 });
-gui.add(renderParams, 'fbxScale', 0.0001, 1.0, 0.001)
+gui.add(renderParams, 'fbxScale', 0.001, 0.1, 0.001)
   .name('FBX Scale')
   .onChange(v => {
     if (astroFBX) astroFBX.scale.setScalar(v);
