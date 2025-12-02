@@ -184,7 +184,7 @@ const renderParams = {
   showPlane: true,
   ambientIntensity: 1.2,
   dirIntensity: 0.8,
-  fbxScale = 0.02;
+  fbxScale: = 0.02;
 };
 
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
