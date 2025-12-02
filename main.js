@@ -1,6 +1,9 @@
-// blender_model.js
+// main.js
 // - Blender glb 로드
-// - 원인 2: 라이트/렌더러 세팅 보정
+// - Light / Renderer 세팅 보정
+// - Astronaut + Beige Block 두 모델 로드
+// 우주인: y=0에 그대로
+// 블록: 바운딩 박스 높이 기반으로 바닥 위에 올림
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -12,12 +15,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf0f0f0);
 
-// 렌더러
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 
-// 컬러 스페이스 + 톤매핑 설정 (중요)
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -35,11 +36,9 @@ camera.position.set(3, 2, 6);
 camera.lookAt(0, 1, 0);
 scene.add(camera);
 
-// FPS 표시
 const stats = new Stats();
 document.body.appendChild(stats.dom);
 
-// OrbitControls
 const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.enableDamping = true;
 
@@ -63,85 +62,93 @@ plane.position.y = -0.01;
 plane.receiveShadow = true;
 scene.add(plane);
 
-// ------- 라이트 (밝게 + 부드럽게 조정) -------
-
-// 전체를 밝혀주는 Ambient Light
+// ------- 라이트 -------
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
 scene.add(ambientLight);
 
-// 방향성 라이트 (이전보다 약하게)
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(5, 10, 7);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.set(2048, 2048);
 scene.add(dirLight);
 
-// 그림자 떨어질 위치 기준
 dirLight.target.position.set(0, 0, 0);
 scene.add(dirLight.target);
 
-// ------- GLB 모델 로드 -------
+// ============= 공통 함수: 모델 품질/중심 보정 =============
+function setupModel(root) {
+  root.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+
+      const mat = child.material;
+      if (mat && mat.map) {
+        // colorSpace 사용
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        mat.needsUpdate = true;
+      }
+      if (mat && mat.isMeshStandardMaterial) {
+        if (mat.metalness > 0.8) mat.metalness = 0.3;
+        if (mat.roughness < 0.1) mat.roughness = 0.3;
+      }
+    }
+  });
+
+  // 중심을 원점 근처로
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+
+  return root;
+}
+
+// ------- GLB 로더 -------
 const loader = new GLTFLoader();
 
-loader.load(
-  './models/astronaut(free).glb',
-  (gltf) => {
-    const root = gltf.scene;
+// 1) 우주인 모델 (y=0 고정)
+loader.load('./models/astronaut(free).glb', (gltf) => {
+  const astro = setupModel(gltf.scene);
 
-    // 텍스처 sRGB 보정 + 그림자 설정
-    root.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+  // 우주인 기본 위치대로 y=0
+  astro.position.set(0, 0, 0);
+  scene.add(astro);
 
-        const mat = child.material;
-        if (mat && mat.map) {
-          mat.map.encoding = THREE.sRGBEncoding;
-          mat.needsUpdate = true;
-        }
-        // 필요하면 roughness/metalness 살짝 줄여보기
-        if (mat && mat.isMeshStandardMaterial) {
-          if (mat.metalness > 0.8) mat.metalness = 0.3;
-          if (mat.roughness < 0.1) mat.roughness = 0.3;
-        }
-      }
-    });
+  // 카메라 세팅 astro 크기 기준으로
+  const astroBox = new THREE.Box3().setFromObject(astro);
+  const astroSize = astroBox.getSize(new THREE.Vector3());
+  const sizeLen = astroSize.length();
 
-    // 모델 중심/크기 계산해서 정렬
-    const box = new THREE.Box3().setFromObject(root);
-    const size = box.getSize(new THREE.Vector3()).length();
-    const center = box.getCenter(new THREE.Vector3());
+  camera.near = sizeLen / 100;
+  camera.far = sizeLen * 100;
+  camera.updateProjectionMatrix();
 
-    // 중심을 원점 근처로 이동
-    root.position.x += (0 - center.x);
-    root.position.y += (0 - center.y);
-    root.position.z += (0 - center.z);
+  const camPos = new THREE.Vector3(
+    sizeLen,
+    sizeLen * 0.6,
+    sizeLen
+  );
+  camera.position.copy(camPos);
+  orbitControls.target.set(0, astroSize.y / 2, 0);
+  orbitControls.update();
 
-    scene.add(root);
+  console.log('Astronaut 모델 로드 완료');
+});
 
-    // 카메라/컨트롤 타겟 세팅
-    camera.near = size / 100;
-    camera.far = size * 100;
-    camera.updateProjectionMatrix();
+// 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
+loader.load('./models/beige_block.glb', (gltf) => {
+  const block = setupModel(gltf.scene);
 
-    const camPos = center.clone().add(new THREE.Vector3(size, size * 0.6, size));
-    camera.position.copy(camPos);
-    orbitControls.target.copy(new THREE.Vector3(0, center.y, 0));
-    orbitControls.update();
+  // 블록 높이 계산
+  const blockBox = new THREE.Box3().setFromObject(block);
+  const blockSize = blockBox.getSize(new THREE.Vector3());
 
-    console.log('GLB 모델 로드 완료');
-  },
-  (xhr) => {
-    if (xhr.total) {
-      console.log(`로딩: ${(xhr.loaded / xhr.total * 100).toFixed(1)}%`);
-    } else {
-      console.log(`로딩 중... ${xhr.loaded} bytes`);
-    }
-  },
-  (error) => {
-    console.error('GLB 로드 에러:', error);
-  }
-);
+  // x=2로 옆으로, y=blockSize.y/2 만큼 올려 바닥 위에 붙임
+  block.position.set(2, blockSize.y / 2, 0);
+
+  scene.add(block);
+  console.log('Beige Block 모델 로드 완료');
+});
 
 // ------- GUI -------
 const gui = new GUI();
@@ -176,5 +183,4 @@ function render() {
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }
-
 render();

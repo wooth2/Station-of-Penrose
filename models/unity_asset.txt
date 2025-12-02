@@ -1,0 +1,8 @@
+<에셋 찜 목록>
+https://assetstore.unity.com/packages/package/11044 -> 3D 우주 배경
+https://assetstore.unity.com/packages/3d/characters/humanoids/sci-fi/stylized-astronaut-114298 -> 우주인 캐릭터 에셋
+
+<에셋 사이트 추천>
+https://assetstore.unity.com/ -> unity 설치 및 세팅 필요해서, 임시 에셋 사용 후 추후 적용하면 될 듯
+https://www.cgtrader.com/ -> 현재 사용한 임시 에셋 출처
+https://polyhaven.com/textures -> 블록 텍스처 사이트
