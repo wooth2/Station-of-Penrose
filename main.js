@@ -140,6 +140,10 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
 
 // 1) 우주인 모델 by 조원희
 let astroFBX;
+let astroMixer;            // 애니메이션 재생기
+const astroActions = {};   // idle / walk 등 저장
+let currentAction;         // 현재 재생 중인 액션
+const clock = new THREE.Clock(); // 렌더 루프에서 delta 시간 계산용
 const fbxLoader = new FBXLoader();
 
 fbxLoader.load(
@@ -151,6 +155,8 @@ fbxLoader.load(
     astroFBX.position.set(-3, -0.01, 0);
 
     scene.add(astroFBX);
+    astroMixer = new THREE.AnimationMixer(astroFBX);
+    loadIdleAnimation();
 
     console.log('Astronaut FBX 로드 완료');
   },
@@ -159,6 +165,30 @@ fbxLoader.load(
     console.error('Astronaut FBX 로드 실패', error);
   }
 );
+
+// 캐릭터 애니메이션 불러오는 함수
+function loadIdleAnimation() { // 서있는 애니메이션
+  const idleLoader = new FBXLoader();
+
+  idleLoader.load(
+    './models/Standing W_Briefcase Idle.fbx',
+    (fbx) => {
+      // 이 파일 안에 애니메이션 클립이 들어있음
+      const clip = fbx.animations[0];
+      const action = astroMixer.clipAction(clip);
+
+      astroActions.idle = action;
+      currentAction = action;
+
+      action.play();
+      console.log('Idle 애니메이션 재생 시작');
+    },
+    undefined,
+    (error) => {
+      console.error('Idle 애니메이션 로드 실패', error);
+    }
+  );
+}
 
 
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
@@ -210,6 +240,10 @@ gui.add(renderParams, 'fbxScale', 0.001, 0.1, 0.001)
 
 // ------- 렌더 루프 -------
 function render() {
+  const delta = clock.getDelta();
+  if (astroMixer) {
+    astroMixer.update(delta);
+  }
   stats.update();
   orbitControls.update();
   renderer.render(scene, camera);
