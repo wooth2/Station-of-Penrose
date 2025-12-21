@@ -10,6 +10,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+
 
 // ------- 기본 세팅 -------
 const scene = new THREE.Scene();
@@ -135,6 +138,166 @@ loader.load('./models/astronaut(free).glb', (gltf) => {
   console.log('Astronaut 모델 로드 완료');
 });
 
+// 1) 우주인 모델 by 조원희
+let astroFBX; // 캐릭터 모델
+let astroMixer; // 애니메이션 믹서
+const astroActions = {}; // 로드된 애니메이션 저장
+let currentAction; // 현재 캐릭터 액션
+let isWalking = false; // 걷기 여부
+let isTurning = false; // 180도 회전 여부
+const walkDir = new THREE.Vector3(); // 이동 방향
+const turnStartDir = new THREE.Vector3(); // turn 시작 시점 방향
+
+const clock = new THREE.Clock();
+const fbxLoader = new FBXLoader();
+
+fbxLoader.load(
+  './models/astronaut.fbx',
+  (fbx) => {
+
+    // 베이스 캐릭터 로드
+    astroFBX = setupModel(fbx);
+
+    // 크기 조절 (UI 초기값과 일치해야 함)
+    astroFBX.scale.setScalar(renderParams.fbxScale);
+
+    // 위치
+    astroFBX.position.set(-3, -0.01, 0);
+
+    scene.add(astroFBX);
+
+    console.log("Astronaut 베이스 로드 완료");
+
+    astroFBX.getWorldDirection(walkDir);
+    walkDir.normalize();
+
+    // 애니메이션 믹서 생성
+    astroMixer = new THREE.AnimationMixer(astroFBX);
+
+
+    // ------------------------
+    // 1) Idle 애니메이션 로드
+    // ------------------------
+    const idleLoader = new FBXLoader();
+    idleLoader.load('./models/Standing W_Briefcase Idle.fbx', (idleFBX) => {
+
+      // FBX에 포함된 첫 번째 애니메이션 클립
+      const idleClip = idleFBX.animations[0];
+
+      // 캐릭터에 idleClip을 적용할 animationAction 생성
+      const idleAction = astroMixer.clipAction(idleClip);
+
+      // 저장
+      astroActions.idle = idleAction;
+
+      // 현재 액션으로 등록하고 재생
+      currentAction = idleAction;
+      idleAction.play();
+
+      console.log("Idle 애니메이션 로드 성공");
+    });
+
+
+    // ------------------------
+    // 2) Walk 애니메이션 로드
+    // ------------------------
+    const walkLoader = new FBXLoader();
+    walkLoader.load('./models/Walking.fbx', (walkFBX) => {
+      const walkClip = walkFBX.animations[0];
+
+      // walk 애니메이션 action 생성
+      const walkAction = astroMixer.clipAction(walkClip);
+
+      // 제자리 걷기는 자연스럽게 루프 반복
+      walkAction.loop = THREE.LoopRepeat;
+      walkAction.clampWhenFinished = false;
+
+      // 저장
+      astroActions.walk = walkAction;
+
+      console.log("Walk 애니메이션 로드 성공");
+    });
+
+    // mixer에서 일회성 애니메이션(예: Turn180)이 끝나는 순간을 잡기 ---
+    astroMixer.addEventListener('finished', (e) => {
+      // e.action: 끝난 AnimationAction
+      if (e.action !== astroActions.turn180) return;
+      console.log('Turn180 종료');
+
+      // 이동 방향 180도 회전
+      walkDir.copy(turnStartDir).multiplyScalar(-1);
+      astroFBX.lookAt(astroFBX.position.clone().add(walkDir));
+
+      isTurning = false;
+
+      // 회전이 끝난 뒤 원래 상태로 복귀
+      let next = null;
+      if (isWalking && astroActions.walk) {
+        next = astroActions.walk;
+      } else if (astroActions.idle) {
+        next = astroActions.idle;
+      }
+      if (next) {
+        next.reset();
+        next.play();
+        currentAction = next;
+      }
+      astroActions.turn180.stop();
+    });
+
+
+    // ---------------------------
+    // 3) Turn180 애니메이션 로드
+    // ---------------------------
+    const turnLoader = new FBXLoader();
+    turnLoader.load(
+      './models/Turn180.fbx',   // Turn180 파일 경로/이름 정확히
+      (turnFBX) => {
+        const turnClip = turnFBX.animations[0];
+        if (!turnClip) {
+          console.warn('Turn180.fbx 에 animations[0] 없음');
+          return;
+        }
+
+        const turnAction = astroMixer.clipAction(turnClip);
+
+        // 한 번만 재생하고 끝나도록 설정
+        turnAction.loop = THREE.LoopOnce;
+        turnAction.clampWhenFinished = true;
+
+        astroActions.turn180 = turnAction;
+        console.log('Turn180 애니메이션 로드 성공');
+      },
+      undefined,
+      (err) => console.error('Turn180 애니메이션 로드 실패', err)
+    );
+  },
+  undefined,
+  (err) => console.error("Astronaut 베이스 로드 실패", err)
+);
+
+
+// name에 해당하는 애니메이션으로 부드럽게 전환하는 함수
+function fadeToAction(name, duration) {
+  if (!astroMixer) return;
+  const nextAction = astroActions[name];
+  if (!nextAction) return;
+  // 동일 애니면 무시
+  if (currentAction === nextAction) return;
+
+  // 다음 애니메이션 초기화 후 재생
+  nextAction.reset().play();
+
+  // 현재 실행 중인 애니메이션에서 다음 애니로 크로스페이드
+  if (currentAction) {
+    currentAction.crossFadeTo(nextAction, duration, false);
+  }
+
+  currentAction = nextAction;
+}
+
+
+
 // 2) 베이지 블록 모델만 바운딩 박스 기반 y 보정
 loader.load('./models/beige_block.glb', (gltf) => {
   const block = setupModel(gltf.scene);
@@ -158,6 +321,16 @@ const renderParams = {
   showPlane: true,
   ambientIntensity: 1.2,
   dirIntensity: 0.8,
+  fbxScale: 0.02,
+  walking: false,
+  walkSpeed: 1.5,
+};
+
+renderParams.turn180 = () => {
+  if (isTurning || !astroActions.turn180) return;
+  turnStartDir.copy(walkDir); // turn 시작 시점 방향 저장
+  isTurning = true;
+  fadeToAction('turn180', 0.0);
 };
 
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
@@ -175,9 +348,32 @@ gui.add(renderParams, 'showAxes').onChange((v) => {
 gui.add(renderParams, 'showPlane').onChange((v) => {
   plane.visible = v;
 });
+gui.add(renderParams, 'fbxScale', 0.001, 0.1, 0.001)
+  .name('FBX Scale')
+  .onChange(v => {
+    if (astroFBX) astroFBX.scale.setScalar(v);
+  });
+gui.add(renderParams, 'walking')
+  .name('Walk')
+  .onChange((v) => {
+    isWalking = v; // 이동 플래그
+    console.log('Walk 토글:', v);
+    fadeToAction(v ? 'walk' : 'idle', 0.3);
+  });
+gui.add(renderParams, 'walkSpeed', 0, 5, 0.1).name('Walk Speed');
+gui.add(renderParams, 'turn180').name('Turn 180');
 
 // ------- 렌더 루프 -------
 function render() {
+  const delta = clock.getDelta();
+  if (astroMixer) {
+    astroMixer.update(delta);
+  }
+  if (isWalking && !isTurning && astroFBX) {
+    // 속도 * delta 만큼 앞으로 이동
+    const dist = renderParams.walkSpeed * delta;
+    astroFBX.position.addScaledVector(walkDir, dist);
+  }
   stats.update();
   orbitControls.update();
   renderer.render(scene, camera);
