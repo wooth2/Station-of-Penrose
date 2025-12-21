@@ -106,38 +106,6 @@ function setupModel(root) {
   return root;
 }
 
-// ------- GLB 로더 -------
-const loader = new GLTFLoader();
-
-// 1) 우주인 모델 (y=0 고정)
-loader.load('./models/astronaut(free).glb', (gltf) => {
-  const astro = setupModel(gltf.scene);
-
-  // 우주인 기본 위치대로 y=0
-  astro.position.set(0, 0, 0);
-  scene.add(astro);
-
-  // 카메라 세팅 astro 크기 기준으로
-  const astroBox = new THREE.Box3().setFromObject(astro);
-  const astroSize = astroBox.getSize(new THREE.Vector3());
-  const sizeLen = astroSize.length();
-
-  camera.near = sizeLen / 100;
-  camera.far = sizeLen * 100;
-  camera.updateProjectionMatrix();
-
-  const camPos = new THREE.Vector3(
-    sizeLen,
-    sizeLen * 0.6,
-    sizeLen
-  );
-  camera.position.copy(camPos);
-  orbitControls.target.set(0, astroSize.y / 2, 0);
-  orbitControls.update();
-
-  console.log('Astronaut 모델 로드 완료');
-});
-
 // 1) 우주인 모델 by 조원희
 let astroFBX; // 캐릭터 모델
 let astroMixer; // 애니메이션 믹서
