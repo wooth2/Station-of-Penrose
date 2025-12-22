@@ -10,161 +10,12 @@
 //   - frustumCulled 끄기 (컬링 방지)
 //   - 렌더 루프에서 스카이박스를 카메라 위치로 이동 (무한 배경)
 // - (추가) 우주선 3개 (ufo.glb, low_poly_space_ship.glb, toy_rocket.glb) 배경에 떠있게 추가
-// - (추가) 시나리오 시스템: 튜토리얼 자막과 인터랙션
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import Stats from 'three/addons/libs/stats.module.js';
-import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+// import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-
-
-// =====================
-// HUD (좌측 상단 고정 조작 안내) - Subtitle 스타일 느낌
-// =====================
-function ensureControlsHUD() {
-  let el = document.getElementById('controls-hud');
-  if (el) return el;
-
-  el = document.createElement('div');
-  el.id = 'controls-hud';
-
-  // 내용(키캡 + 설명) - HTML
-  el.innerHTML = `
-    <div class="hud-title">조작 안내</div>
-
-    <div class="hud-row">
-      <span class="hud-keycap">W</span>
-      <span class="hud-text">걷기</span>
-    </div>
-
-    <div class="hud-row">
-      <span class="hud-keycap">T</span>
-      <span class="hud-text">180도 회전</span>
-    </div>
-
-    <div class="hud-row">
-      <span class="hud-keycap wide">마우스패드</span>
-      <span class="hud-text">확대 / 축소</span>
-    </div>
-  `;
-
-  // HUD 컨테이너 스타일(자막 느낌: 반투명 + 블러 + 보더 + 부드러운 그림자)
-  Object.assign(el.style, {
-    position: 'fixed',
-    left: '24px',
-    top: '24px',
-    zIndex: 9999,
-    pointerEvents: 'none',
-
-    // 크기/가독성 업
-    minWidth: '320px',
-    maxWidth: '420px',
-    padding: '18px 18px',
-
-    color: '#fff',
-    borderRadius: '18px',
-    border: '1px solid rgba(255,255,255,0.22)',
-    background: 'linear-gradient(180deg, rgba(10,12,20,0.62), rgba(10,12,20,0.38))',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-    backdropFilter: 'blur(10px)',
-    WebkitBackdropFilter: 'blur(10px)',
-
-    // “자막”처럼 부드럽게 등장/퇴장
-    opacity: '0',
-    transform: 'translateY(-6px)',
-    transition: 'opacity 260ms ease, transform 260ms ease',
-  });
-
-  // 내부 요소 스타일을 한 번에 주기 위해 <style> 태그 주입 (중복 방지)
-  if (!document.getElementById('controls-hud-style')) {
-    const style = document.createElement('style');
-    style.id = 'controls-hud-style';
-    style.textContent = `
-      #controls-hud .hud-title {
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: 0.2px;
-        margin-bottom: 12px;
-        opacity: 0.95;
-      }
-
-      #controls-hud .hud-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px 10px;
-        border-radius: 14px;
-        background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(255,255,255,0.10);
-        margin-bottom: 10px;
-      }
-      #controls-hud .hud-row:last-child { margin-bottom: 0; }
-
-      /* 키캡(키 모양) */
-      #controls-hud .hud-keycap {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-
-        height: 34px;
-        min-width: 34px;
-        padding: 0 12px;
-
-        font-size: 15px;
-        font-weight: 800;
-
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.22);
-        background: rgba(0,0,0,0.35);
-        box-shadow:
-          inset 0 1px 0 rgba(255,255,255,0.18),
-          0 6px 14px rgba(0,0,0,0.25);
-      }
-      #controls-hud .hud-keycap.wide {
-        padding: 0 12px;
-        min-width: 92px;
-        font-weight: 700;
-        letter-spacing: 0.2px;
-      }
-
-      /* 텍스트 */
-      #controls-hud .hud-text {
-        font-size: 16px;
-        font-weight: 650;
-        opacity: 0.95;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  document.body.appendChild(el);
-  return el;
-}
-
-window.showControlsHUD = function () {
-  const el = ensureControlsHUD();
-  // 다음 프레임에 transition이 먹도록
-  requestAnimationFrame(() => {
-    el.style.opacity = '1';
-    el.style.transform = 'translateY(0px)';
-  });
-};
-
-window.hideControlsHUD = function () {
-  const el = document.getElementById('controls-hud');
-  if (!el) return;
-  el.style.opacity = '0';
-  el.style.transform = 'translateY(-6px)';
-};
-
-window.removeControlsHUD = function () {
-  const el = document.getElementById('controls-hud');
-  if (el) el.remove();
-};
-
-
 
 // =====================
 // 시나리오 관리 시스템
@@ -178,6 +29,17 @@ class ScenarioManager {
 
   async start() {
     this.currentStep = 1;
+
+    // 시작 화면 종료 (캐릭터 클로즈업 렌더링 중지)
+    try {
+      if (typeof isStartScreenActive !== 'undefined') isStartScreenActive = false;
+      if (typeof startScreenRenderer !== 'undefined' && startScreenRenderer?.domElement?.parentElement) {
+        startScreenRenderer.domElement.parentElement.removeChild(startScreenRenderer.domElement);
+      }
+      if (typeof startScreenRenderer !== 'undefined') startScreenRenderer.dispose?.();
+    } catch (e) {
+      console.warn('[Scenario] start screen cleanup failed:', e);
+    }
     
     // GUI와 Stats 숨기기
     const guiElements = document.querySelectorAll('.lil-gui');
@@ -186,9 +48,9 @@ class ScenarioManager {
     await this.step2_welcome();
   }
 
-  // 2. "우주 정거장 000에 오신걸 환영합니다!" -> 클릭
+  // 2. "펜로즈의 정거장에 오신 것을 환영합니다!" -> 클릭
   async step2_welcome() {
-    await window.showSubtitle('우주 정거장 000에 오신걸 환영합니다!', 999999, null, true);
+    await window.showSubtitle('펜로즈의 정거장에 오신 것을 환영합니다!', 999999, null, true);
     await this.step3_gravity();
   }
 
@@ -204,10 +66,10 @@ class ScenarioManager {
     await this.step5_controls();
   }
 
-  // 5. "W key : 걷기 / T : 180도 회전하기 / 마우스패드 : 확대/축소" -> 클릭
+  // 5. "W key : 걷기 / T : 180도 회전하기 / 마우스휠 : 확대/축소 / 드래그 : 화면 이동" -> 클릭
   async step5_controls() {
     await window.showSubtitle(
-      'W 키: 걷기 / T 키: 180도 회전하기 / 마우스패드: 확대/축소',
+      'W : 걷기 / T : 180도 회전하기<br>마우스휠 : 확대·축소 / 드래그 : 화면 이동',
       999999,
       null,
       true
@@ -369,61 +231,6 @@ class ScenarioManager {
 
 const scenarioManager = new ScenarioManager();
 window.scenarioManager = scenarioManager;
-
-// BEGIN PATCH: C키 토글 + 시나리오 강제 진행(9단계 이상이면 진행)
-
-// moveOnMap.js의 c키 이벤트 리스너에 시나리오 연동
-document.addEventListener(
-  'keydown',
-  (e) => {
-    const key = (e.key || '').toLowerCase();
-    if (key !== 'c') return;
-
-    // GUI 위에서 눌렀으면 무시
-    const t = e?.target;
-    if (t && typeof t.closest === 'function' && t.closest('.lil-gui')) return;
-
-    // 1) 토글 실행
-    const cp =
-      (typeof window !== 'undefined' && window.cameraParams) ? window.cameraParams :
-      (typeof cameraParams !== 'undefined' ? cameraParams : null);
-
-    if (cp && typeof cp.toggleView === 'function') {
-      cp.toggleView();
-    } else {
-      console.error('[C] cameraParams.toggleView 가 아직 준비되지 않았습니다.');
-      // 토글이 실패해도 시나리오는 진행시켜서(디버그/안전) "자막이 안 뜨는" 상황을 막음
-    }
-
-    // 2) ✅ 시나리오 진행 조건 완화:
-    // - waitingForCKey 가 true 이면 당연히 진행
-    // - 또는 currentStep >= 9 이면(= C 안내 이후 단계) 강제로 진행
-    try {
-      const sm = (typeof window !== 'undefined' && window.scenarioManager) ? window.scenarioManager : scenarioManager;
-
-      const canAdvance =
-        sm &&
-        (sm.waitingForCKey === true || (typeof sm.currentStep === 'number' && sm.currentStep >= 9));
-
-      if (canAdvance) {
-        // waitingForCKey가 false여도, 9단계 이상이면 다음 자막으로 강제 이동
-        sm.onCKeyPressed();
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-    } catch (err) {
-      console.error('[C] scenario advance error:', err);
-    }
-
-    // 기본: 토글만 하고 끝
-    e.preventDefault();
-  },
-  { capture: true }
-);
-
-// END PATCH
-
 
 
 
@@ -595,7 +402,9 @@ renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 // =====================
-// 시작 화면용 클로즈업 렌더러
+// 시작 화면용 클로즈업 렌더러 (main.js 기능 이식)
+// - #start-screen 요소가 있으면 그 안에 투명 캔버스를 삽입
+// - '시작하기' 버튼으로 씬 전환 전까지 캐릭터를 화면에 렌더링
 // =====================
 const startScreenRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 startScreenRenderer.setSize(window.innerWidth, window.innerHeight);
@@ -603,21 +412,22 @@ startScreenRenderer.outputColorSpace = THREE.SRGBColorSpace;
 startScreenRenderer.toneMapping = THREE.ACESFilmicToneMapping;
 startScreenRenderer.toneMappingExposure = 1.0;
 
-// 시작 화면에 추가
-const startScreen = document.getElementById('start-screen');
-if (startScreen) {
-  startScreen.insertBefore(startScreenRenderer.domElement, startScreen.firstChild);
+// 시작 화면에 추가 (있으면)
+const startScreenEl = document.getElementById('start-screen');
+if (startScreenEl) {
+  startScreenEl.insertBefore(startScreenRenderer.domElement, startScreenEl.firstChild);
 }
 
 let isStartScreenActive = true;
 
+// 클로즈업 카메라 (캐릭터 얼굴 클로즈업)
+const closeupCamera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+closeupCamera.position.set(0, 1.7, 0.5);
+closeupCamera.lookAt(0, 1.6, 0);
+
+
 // ====== Cameras (2개) ======
 const aspect = window.innerWidth / window.innerHeight;
-
-// 클로즈업 카메라 (캐릭터 얼굴 클로즈업)
-const closeupCamera = new THREE.PerspectiveCamera(45, aspect, 0.01, 100);
-closeupCamera.position.set(0, 1.7, 0.5); // 캐릭터 앞에서 얼굴 클로즈업
-closeupCamera.lookAt(0, 1.6, 0);
 
 // 1) 전체 맵 시점용 Perspective
 const mapPerspCamera = new THREE.PerspectiveCamera(60, aspect, 0.05, 2000);
@@ -646,10 +456,6 @@ let isOrthoView = true;
 // 초기 Ortho에서는 CubeTexture background를 사용하지 않고 Plane 배경 사용
 scene.background = null;
 ensureOrthoBackgroundPlane();
-
-// Stats
-const stats = new Stats();
-document.body.appendChild(stats.dom);
 
 // Controls (카메라 바뀌면 object만 교체)
 const orbitControls = new OrbitControls(activeCamera, renderer.domElement);
@@ -740,7 +546,7 @@ renderer.domElement.addEventListener('pointercancel', endOrthoDrag);
 // FIXED POSE(캡처 값) - Ortho/Persp 공통으로 사용
 const ORTHO_FIXED_POSE = {
   cam: new THREE.Vector3(9.542, 12.483, 9.541),
-  target: new THREE.Vector3(0, 3, 0),
+  target: new THREE.Vector3(0, 2.95, 0),
 };
 
 // Perspective view should be closer to the map center so that the map size feels similar to Ortho
@@ -797,12 +603,8 @@ const cameraParams = {
 
     // Perspective에서는 캐릭터 숨김
     updateCharacterVisibility();
-
-// END PATCH
   },
 };
-
-window.cameraParams = cameraParams;
 
 
 function applyFixedPoseFromParams() {
@@ -995,12 +797,14 @@ function onResize() {
   orthoCamera.updateProjectionMatrix();
   updateOrthoBackgroundTiling();
 
-  // Closeup camera
-  closeupCamera.aspect = asp;
-  closeupCamera.updateProjectionMatrix();
-
   renderer.setSize(w, h);
-  startScreenRenderer.setSize(w, h);
+
+  // 시작 화면 렌더러도 리사이즈
+  if (startScreenRenderer) startScreenRenderer.setSize(w, h);
+  if (closeupCamera) {
+    closeupCamera.aspect = asp;
+    closeupCamera.updateProjectionMatrix();
+  }
 
   // 현재 뷰가 Ortho면 프레이밍/고정 처리
   if (isOrthoView) {
@@ -1023,7 +827,8 @@ dirLight.target.position.set(0, 0, 0);
 scene.add(dirLight.target);
 
 // ------- GUI 파라미터 -------
-const gui = new GUI();
+// const gui = new GUI();
+const gui = null; // GUI disabled (GUI code is commented out below; behavior preserved via keyboard/logic)
 const renderParams = {
   exposure: 1.0,
   ambientIntensity: 1.2,
@@ -1250,6 +1055,7 @@ function loadSpaceAssets() {
   });
 }
 
+/* GUI (hidden):
 // ------- GUI -------
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
   renderer.toneMappingExposure = v;
@@ -1311,32 +1117,43 @@ camFolder.add(cameraParams, 'tgtZ', -200, 200, 0.01).name('tgtZ').onChange(apply
 camFolder.add({ applyPose: applyFixedPoseFromParams }, 'applyPose').name('Apply Pose');
 
 camFolder.open();
+*/
 
 // =====================
-// s키: Ortho(overview) <-> Perspective(전체맵) 토글
-// 토글할 때마다 둘 다 FIXED POSE 적용(토글 시점에만)
+// c키: GUI의 Toggle View 버튼과 동일한 효과
 // =====================
-window.addEventListener('keydown', (e) => {
-  if (e.key === 's' || e.key === 'S') {
-    isOrthoView = !isOrthoView;
+document.addEventListener(
+  'keydown',
+  (e) => {
+    const key = (e.key || '').toLowerCase();
+    if (key !== 'c') return;
+    if (isEventOnGUI(e)) return;
 
-    activeCamera = isOrthoView ? orthoCamera : mapPerspCamera;
-    // When entering Ortho, stop any residual OrbitControls damping/inertia and snap to fixed pose
-    if (isOrthoView) {
-      enterOrthoAndFreeze();
+    // 1) view toggle
+    if (cameraParams && typeof cameraParams.toggleView === 'function') {
+      cameraParams.toggleView();
+    } else {
+      console.error('[C] cameraParams.toggleView 가 아직 준비되지 않았습니다.');
     }
-    orbitControls.object = activeCamera;
-    orbitControls.enabled = true;
 
-    // 토글 시점에만: Ortho/Persp 모두 동일한 고정 pose 적용
-    applyFixedPoseTo(activeCamera);
-    applyControlsForView();
-    if (typeof cameraParams !== 'undefined') cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
+    // 2) scenario advance (if scenario is in/after the "press C" step)
+    try {
+      const sm = (typeof window !== 'undefined' && window.scenarioManager) ? window.scenarioManager : null;
+      const canAdvance =
+        sm &&
+        (sm.waitingForCKey === true || (typeof sm.currentStep === 'number' && sm.currentStep >= 9));
 
-    // Perspective에서는 캐릭터 숨김
-    updateCharacterVisibility();
-  }
-});
+      if (canAdvance && typeof sm.onCKeyPressed === 'function') {
+        sm.onCKeyPressed();
+      }
+    } catch (err) {
+      console.error('[C] scenario advance error:', err);
+    }
+
+    e.preventDefault();
+  },
+  { capture: true }
+);
 
 
 // =====================
@@ -1368,15 +1185,14 @@ const TARGET_CORNER_RAD = Math.PI / 2;    // 90deg
 // Character group
 const actorGroup = new THREE.Group();
 worldGroup.add(actorGroup);
-// 시작 화면에서도 캐릭터 보이게 (나중에 시나리오 시작 후 Ortho 전용으로 변경)
-actorGroup.visible = true;
+updateCharacterVisibility();
 
 
 // Perspective에서는 캐릭터를 숨김
 function updateCharacterVisibility() {
   if (typeof actorGroup !== 'undefined') {
     // 시작 화면이 활성화되어 있으면 항상 보임
-    if (isStartScreenActive) {
+    if (typeof isStartScreenActive !== 'undefined' && isStartScreenActive) {
       actorGroup.visible = true;
     } else {
       // 게임 시작 후에는 Ortho에서만 보임
@@ -1412,6 +1228,7 @@ let autoCornerArmed = false;
 let autoCornerArmAt = 0;
 const AUTO_CORNER_RELEASE_SEC = 0.5;
 
+/* GUI (hidden):
 const charFolder = gui.addFolder('Character');
 charFolder.add(characterParams, 'scale', 0.001, 0.05, 0.001).name('scale').onChange((v) => {
   actorGroup.scale.setScalar(v);
@@ -1422,25 +1239,28 @@ charFolder.add(characterParams, 'y', -10, 10, 0.01).name('y').onChange((v) => (a
 charFolder.add(characterParams, 'z', -50, 50, 0.01).name('z').onChange((v) => (actorGroup.position.z = v));
 charFolder.add(params, 'walkSpeed', 0, 200, 1).name('walkSpeed');
 charFolder.open();
+*/
 
 let cornerCtrl = null;
 
 // movement/corner params (ported from main7)
 
 // keep constants in sync with GUI
-charFolder.controllers?.forEach(() => {}); // no-op (lil-gui compat)
-charFolder.__controllers?.forEach(() => {}); // legacy no-op
+// charFolder.controllers?.forEach(() => {}); // no-op (lil-gui compat)
+// charFolder.__controllers?.forEach(() => {}); // legacy no-op
 
 // scale/y change hooks
 // (we also keep params.characterScale + CUBE_TOP_Y aligned)
-const _scaleCtrl = charFolder.controllers?.find?.((c) => c._name === 'scale');
-const _yCtrl = charFolder.controllers?.find?.((c) => c._name === 'y');
+// const _scaleCtrl = charFolder.controllers?.find?.((c) => c._name === 'scale');
+// const _yCtrl = charFolder.controllers?.find?.((c) => c._name === 'y');
 
+/* GUI (hidden):
 const cornerFolder = gui.addFolder('Corner');
 cornerCtrl = cornerFolder.add(params, 'corner').name('corner');
 cornerFolder.add(params, 'turnSpeedDeg', 10, 360, 1).name('turnSpeedDeg');
 cornerFolder.add(params, 'distance', 0, 4, 0.01).name('distance');
 cornerFolder.open();
+*/
 
 // Ensure camera pose params exist on cameraParams (for GUI numeric controls)
 cameraParams.camX ??= ORTHO_FIXED_POSE.cam.x;
@@ -1453,10 +1273,12 @@ cameraParams.tgtZ ??= ORTHO_FIXED_POSE.target.z;
 
 cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
 
+/* GUI (hidden):
 // Reuse existing camFolder (defined earlier in this file) to avoid redeclaration.
 camFolder.add(cameraParams, 'toggleView').name('Toggle View');
 camFolder.add(cameraParams, 'mode').name('Mode').listen();
 camFolder.open();
+*/
 
 
 // FBX loader helpers
@@ -1534,6 +1356,14 @@ function getSoleWorld() {
 
 
 
+
+
+// Sole position expressed in worldGroup's local space (so drag-translation doesn't break corner walking)
+function getSoleWorldGroup() {
+  const soleLocal = new THREE.Vector3(0, soleLocalY * params.characterScale, 0);
+  const soleWorld = actorGroup.localToWorld(soleLocal);
+  return worldGroup.worldToLocal(soleWorld);
+}
 function beginCornerIfNeeded() {
   if (cornerActive) return;
   if (!params.corner) return;
@@ -1570,8 +1400,8 @@ function beginCornerIfNeeded() {
     cornerEndQuat.setFromRotationMatrix(m);
   }
 
-  // start/target sole positions
-  cornerStartSoleW.copy(getSoleWorld());
+  // start/target sole positions (worldGroup local space)
+  cornerStartSoleW.copy(getSoleWorldGroup());
 
   // target: corner 시작 지점(sole) 기준 "상대 오프셋"
   const d = params.distance;
@@ -1714,7 +1544,6 @@ document.addEventListener(
     const key = (e.key || '').toLowerCase();
     if (key === 'w') {
       wDown = true;
-      scenarioManager.isWalking = true;
       e.preventDefault();
     }
     if (key === 't') {
@@ -1733,7 +1562,6 @@ document.addEventListener(
     const key = (e.key || '').toLowerCase();
     if (key === 'w') {
       wDown = false;
-      scenarioManager.isWalking = false;
       e.preventDefault();
     }
   },
@@ -1746,8 +1574,6 @@ function render() {
 
   // Ortho이면 패널 업데이트
   if (isOrthoView) updateOrthoDebug();
-
-  stats.update();
   if (orbitControls.enabled) orbitControls.update();
 
   // character animation update
@@ -1783,33 +1609,6 @@ function render() {
   });
 
   if (actions.idle && actions.walk && actions.turn) enforceLocomotionEachFrame();
-
-  // =====================
-  // 시작 화면 클로즈업 렌더링
-  // =====================
-  if (isStartScreenActive && characterRoot && actorGroup.visible) {
-    // 클로즈업 카메라 위치를 캐릭터에 맞춰 업데이트
-    const characterWorldPos = new THREE.Vector3();
-    actorGroup.getWorldPosition(characterWorldPos);
-    
-    // 캐릭터 얼굴 높이 (스케일 고려)
-    const faceHeight = 160 * params.characterScale; // 원래 모델 크기 기준
-    const cameraDistance = 250 * params.characterScale; // 거리 증가 (80 -> 250)
-    
-    closeupCamera.position.set(
-      characterWorldPos.x,
-      characterWorldPos.y + faceHeight,
-      characterWorldPos.z + cameraDistance
-    );
-    closeupCamera.lookAt(
-      characterWorldPos.x,
-      characterWorldPos.y + faceHeight,
-      characterWorldPos.z
-    );
-    
-    // 별도 렌더링
-    startScreenRenderer.render(scene, closeupCamera);
-  }
 
   // turn180: keep actorGroup orientation synced to start/end quats during the clip
   if (isTurning && actions.turn && turnDuration > 0) {
@@ -1897,7 +1696,7 @@ if (autoCornerArmed && !cornerActive) {
       const lateral = new THREE.Vector3().copy(R0).multiplyScalar(yawSign * d * Math.sin(cornerAngle));
 
       const desiredSole = pivot.add(v).add(lateral);
-      const curSole = getSoleWorld();
+      const curSole = getSoleWorldGroup();
       const delta = desiredSole.sub(curSole);
       actorGroup.position.add(delta);
       actorGroup.updateMatrixWorld(true);
@@ -1919,31 +1718,36 @@ if (autoCornerArmed && !cornerActive) {
     renderer.render(scene, activeCamera);
   }
 
+  
+  // =====================
+  // 시작 화면 클로즈업 렌더링
+  // =====================
+  if (isStartScreenActive && characterRoot && actorGroup.visible) {
+    // 클로즈업 카메라 위치를 캐릭터에 맞춰 업데이트
+    const characterWorldPos = new THREE.Vector3();
+    actorGroup.getWorldPosition(characterWorldPos);
+
+    // 캐릭터 얼굴 높이/거리 (스케일 고려)
+    const faceHeight = 160 * params.characterScale;
+    const cameraDistance = 250 * params.characterScale;
+
+    closeupCamera.position.set(
+      characterWorldPos.x,
+      characterWorldPos.y + faceHeight,
+      characterWorldPos.z + cameraDistance
+    );
+    closeupCamera.lookAt(
+      characterWorldPos.x,
+      characterWorldPos.y + faceHeight,
+      characterWorldPos.z
+    );
+
+    startScreenRenderer.render(scene, closeupCamera);
+  }
+
   requestAnimationFrame(render);
 }
 render();
 
 // 초기 1회: 고정 pose 적용 (맵 로드 전이므로, 맵 로드 후 recenter/zoomout이 다시 적용됨)
 applyFixedPoseTo(orthoCamera);
-
-// =====================
-// Perspective 전환 함수 (시나리오에서 호출)
-// =====================
-window.switchToPerspective = function() {
-  if (isOrthoView) {
-    isOrthoView = false;
-    activeCamera = mapPerspCamera;
-
-    // 배경 처리
-    if (skyCubeTexture) scene.background = skyCubeTexture;
-
-    orbitControls.object = activeCamera;
-    orbitControls.enabled = true;
-
-    applyControlsForView();
-    applyPerspectiveClosePose();
-
-    cameraParams.mode = 'Perspective';
-    updateCharacterVisibility();
-  }
-};
