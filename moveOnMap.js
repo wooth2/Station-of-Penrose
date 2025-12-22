@@ -13,8 +13,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import Stats from 'three/addons/libs/stats.module.js';
-import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+// import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
@@ -215,10 +214,6 @@ let isOrthoView = true;
 // 초기 Ortho에서는 CubeTexture background를 사용하지 않고 Plane 배경 사용
 scene.background = null;
 ensureOrthoBackgroundPlane();
-
-// Stats
-const stats = new Stats();
-document.body.appendChild(stats.dom);
 
 // Controls (카메라 바뀌면 object만 교체)
 const orbitControls = new OrbitControls(activeCamera, renderer.domElement);
@@ -583,7 +578,8 @@ dirLight.target.position.set(0, 0, 0);
 scene.add(dirLight.target);
 
 // ------- GUI 파라미터 -------
-const gui = new GUI();
+// const gui = new GUI();
+const gui = null; // GUI disabled (GUI code is commented out below; behavior preserved via keyboard/logic)
 const renderParams = {
   exposure: 1.0,
   ambientIntensity: 1.2,
@@ -810,6 +806,7 @@ function loadSpaceAssets() {
   });
 }
 
+/* GUI (hidden):
 // ------- GUI -------
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
   renderer.toneMappingExposure = v;
@@ -871,32 +868,25 @@ camFolder.add(cameraParams, 'tgtZ', -200, 200, 0.01).name('tgtZ').onChange(apply
 camFolder.add({ applyPose: applyFixedPoseFromParams }, 'applyPose').name('Apply Pose');
 
 camFolder.open();
+*/
 
 // =====================
-// s키: Ortho(overview) <-> Perspective(전체맵) 토글
-// 토글할 때마다 둘 다 FIXED POSE 적용(토글 시점에만)
+// c키: GUI의 Toggle View 버튼과 동일한 효과
 // =====================
-window.addEventListener('keydown', (e) => {
-  if (e.key === 's' || e.key === 'S') {
-    isOrthoView = !isOrthoView;
+document.addEventListener(
+  'keydown',
+  (e) => {
+    const key = (e.key || '').toLowerCase();
+    if (key !== 'c') return;
+    if (isEventOnGUI(e)) return;
 
-    activeCamera = isOrthoView ? orthoCamera : mapPerspCamera;
-    // When entering Ortho, stop any residual OrbitControls damping/inertia and snap to fixed pose
-    if (isOrthoView) {
-      enterOrthoAndFreeze();
+    if (cameraParams && typeof cameraParams.toggleView === 'function') {
+      cameraParams.toggleView();
+      e.preventDefault();
     }
-    orbitControls.object = activeCamera;
-    orbitControls.enabled = true;
-
-    // 토글 시점에만: Ortho/Persp 모두 동일한 고정 pose 적용
-    applyFixedPoseTo(activeCamera);
-    applyControlsForView();
-    if (typeof cameraParams !== 'undefined') cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
-
-    // Perspective에서는 캐릭터 숨김
-    updateCharacterVisibility();
-  }
-});
+  },
+  { capture: true }
+);
 
 
 // =====================
@@ -965,6 +955,7 @@ let autoCornerArmed = false;
 let autoCornerArmAt = 0;
 const AUTO_CORNER_RELEASE_SEC = 0.5;
 
+/* GUI (hidden):
 const charFolder = gui.addFolder('Character');
 charFolder.add(characterParams, 'scale', 0.001, 0.05, 0.001).name('scale').onChange((v) => {
   actorGroup.scale.setScalar(v);
@@ -975,25 +966,28 @@ charFolder.add(characterParams, 'y', -10, 10, 0.01).name('y').onChange((v) => (a
 charFolder.add(characterParams, 'z', -50, 50, 0.01).name('z').onChange((v) => (actorGroup.position.z = v));
 charFolder.add(params, 'walkSpeed', 0, 200, 1).name('walkSpeed');
 charFolder.open();
+*/
 
 let cornerCtrl = null;
 
 // movement/corner params (ported from main7)
 
 // keep constants in sync with GUI
-charFolder.controllers?.forEach(() => {}); // no-op (lil-gui compat)
-charFolder.__controllers?.forEach(() => {}); // legacy no-op
+// charFolder.controllers?.forEach(() => {}); // no-op (lil-gui compat)
+// charFolder.__controllers?.forEach(() => {}); // legacy no-op
 
 // scale/y change hooks
 // (we also keep params.characterScale + CUBE_TOP_Y aligned)
-const _scaleCtrl = charFolder.controllers?.find?.((c) => c._name === 'scale');
-const _yCtrl = charFolder.controllers?.find?.((c) => c._name === 'y');
+// const _scaleCtrl = charFolder.controllers?.find?.((c) => c._name === 'scale');
+// const _yCtrl = charFolder.controllers?.find?.((c) => c._name === 'y');
 
+/* GUI (hidden):
 const cornerFolder = gui.addFolder('Corner');
 cornerCtrl = cornerFolder.add(params, 'corner').name('corner');
 cornerFolder.add(params, 'turnSpeedDeg', 10, 360, 1).name('turnSpeedDeg');
 cornerFolder.add(params, 'distance', 0, 4, 0.01).name('distance');
 cornerFolder.open();
+*/
 
 // Ensure camera pose params exist on cameraParams (for GUI numeric controls)
 cameraParams.camX ??= ORTHO_FIXED_POSE.cam.x;
@@ -1006,10 +1000,12 @@ cameraParams.tgtZ ??= ORTHO_FIXED_POSE.target.z;
 
 cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
 
+/* GUI (hidden):
 // Reuse existing camFolder (defined earlier in this file) to avoid redeclaration.
 camFolder.add(cameraParams, 'toggleView').name('Toggle View');
 camFolder.add(cameraParams, 'mode').name('Mode').listen();
 camFolder.open();
+*/
 
 
 // FBX loader helpers
@@ -1297,8 +1293,6 @@ function render() {
 
   // Ortho이면 패널 업데이트
   if (isOrthoView) updateOrthoDebug();
-
-  stats.update();
   if (orbitControls.enabled) orbitControls.update();
 
   // character animation update
