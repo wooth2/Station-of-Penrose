@@ -9,6 +9,7 @@
 //   - depthWrite/depthTest 끄기 (깊이 간섭 방지)
 //   - frustumCulled 끄기 (컬링 방지)
 //   - 렌더 루프에서 스카이박스를 카메라 위치로 이동 (무한 배경)
+// - (추가) 우주선 3개 (ufo.glb, low_poly_space_ship.glb, toy_rocket.glb) 배경에 떠있게 추가
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -663,12 +664,17 @@ function updateOrthoDebug() {
 const gltfLoader = new GLTFLoader();
 
 // =====================
+// 우주선 애니메이션 관리
+// =====================
+const spaceShipAnimations = [];
+
+// =====================
 // triangle_final.glb 로드
 // =====================
 let mapRoot = null;
 
 gltfLoader.load(
-  './models/triangle_final.glb',
+  './models/texture5.glb',
   (gltf) => {
     mapRoot = setupStaticModelNoCenter(gltf.scene);
     mapRoot.position.set(0, 0, 0);
@@ -677,7 +683,7 @@ gltfLoader.load(
 
     worldGroup.add(mapRoot);
 
-    console.log('triangle_final.glb 로드 완료');
+    console.log('texture5.glb 로드 완료');
 
     // (1) 카메라를 맵 중심으로 평행이동 (고정 포즈 자체를 이동)
     recenterFixedPoseToMap(mapRoot);
@@ -706,10 +712,103 @@ gltfLoader.load(
 
     // (3) 현재 뷰(초기: Ortho)에 고정 포즈 적용
     applyFixedPoseTo(activeCamera);
+
+    // (4) 우주선 3개 추가 (배경에 살짝 보이게)
+    loadSpaceAssets();
   },
   undefined,
-  (err) => console.error('triangle_final.glb 로드 실패', err)
+  (err) => console.error('texture5.glb 로드 실패', err)
 );
+
+// =====================
+// 우주선 3개 로드 및 배치
+// - texture5.glb의 실제 위치 기준으로 상하좌우에 배치
+// - worldGroup에 추가하여 맵과 함께 이동
+// - Perspective에서도 보이도록 worldGroup에 추가
+// - 각 우주선은 느린 속도로 서로 다른 방향으로 이동
+// =====================
+function loadSpaceAssets() {
+  // texture5.glb(mapRoot)의 위치를 기준으로 상대 위치 계산
+  if (!mapRoot) {
+    console.error('mapRoot가 아직 로드되지 않았습니다.');
+    return;
+  }
+
+  const mapPos = mapRoot.position.clone();
+  
+  const spaceShips = [
+    { 
+      file: './models/ufo.glb', 
+      // 맵 기준 왼쪽 위 (스크린샷 왼쪽 상단 동그라미)
+      position: new THREE.Vector3(mapPos.x - 12, mapPos.y + 8, mapPos.z + 8),
+      scale: 0.5,
+      rotation: new THREE.Euler(0, Math.PI / 4, 0),
+      // 애니메이션: 원형 궤도 (시계 방향)
+      animation: {
+        type: 'orbit',
+        radius: 2.0,
+        speed: 0.15,
+        axis: 'y'
+      }
+    },
+    { 
+      file: './models/low_poly_space_ship.glb', 
+      // 맵 기준 오른쪽 (스크린샷 오른쪽 동그라미)
+      position: new THREE.Vector3(mapPos.x + 15, mapPos.y + 5, mapPos.z + 3),
+      scale: 0.4,
+      rotation: new THREE.Euler(0, -Math.PI / 3, 0),
+      // 애니메이션: 위아래 떠다님
+      animation: {
+        type: 'float',
+        amplitude: 1.5,
+        speed: 0.3,
+        axis: 'y'
+      }
+    },
+    { 
+      file: './models/toy_rocket.glb', 
+      // 맵 기준 아래쪽 (스크린샷 하단 동그라미)
+      position: new THREE.Vector3(mapPos.x + 2, mapPos.y + 6, mapPos.z - 12),
+      scale: 0.45,
+      rotation: new THREE.Euler(Math.PI / 6, 0, 0),
+      // 애니메이션: 8자 움직임
+      animation: {
+        type: 'figure8',
+        radius: 1.8,
+        speed: 0.2
+      }
+    }
+  ];
+
+  spaceShips.forEach((ship, index) => {
+    gltfLoader.load(
+      ship.file,
+      (gltf) => {
+        const model = setupStaticModelNoCenter(gltf.scene);
+        
+        // 위치, 크기, 회전 설정
+        model.position.copy(ship.position);
+        model.scale.setScalar(ship.scale);
+        model.rotation.copy(ship.rotation);
+
+        // worldGroup에 추가하여 맵과 함께 이동
+        worldGroup.add(model);
+
+        // 애니메이션 정보 저장
+        spaceShipAnimations.push({
+          model: model,
+          startPos: ship.position.clone(),
+          animation: ship.animation,
+          time: Math.random() * Math.PI * 2 // 랜덤 시작 시간으로 비동기화
+        });
+
+        console.log(`${ship.file} 로드 완료 (${index + 1}/3) at position:`, ship.position);
+      },
+      undefined,
+      (err) => console.error(`${ship.file} 로드 실패:`, err)
+    );
+  });
+}
 
 // ------- GUI -------
 gui.add(renderParams, 'exposure', 0.1, 2.5).onChange((v) => {
@@ -1205,6 +1304,34 @@ function render() {
   // character animation update
   const dtChar = charClock.getDelta();
   if (mixer) mixer.update(dtChar);
+
+  // =====================
+  // 우주선 애니메이션 업데이트
+  // =====================
+  spaceShipAnimations.forEach((shipAnim) => {
+    shipAnim.time += dtChar;
+    const anim = shipAnim.animation;
+    const t = shipAnim.time * anim.speed;
+
+    if (anim.type === 'orbit') {
+      // 원형 궤도 (XZ 평면 또는 다른 평면)
+      if (anim.axis === 'y') {
+        shipAnim.model.position.x = shipAnim.startPos.x + Math.cos(t) * anim.radius;
+        shipAnim.model.position.y = shipAnim.startPos.y;
+        shipAnim.model.position.z = shipAnim.startPos.z + Math.sin(t) * anim.radius;
+      }
+    } else if (anim.type === 'float') {
+      // 위아래 떠다님
+      shipAnim.model.position.x = shipAnim.startPos.x;
+      shipAnim.model.position.y = shipAnim.startPos.y + Math.sin(t) * anim.amplitude;
+      shipAnim.model.position.z = shipAnim.startPos.z;
+    } else if (anim.type === 'figure8') {
+      // 8자 움직임 (Lissajous curve)
+      shipAnim.model.position.x = shipAnim.startPos.x + Math.sin(t) * anim.radius;
+      shipAnim.model.position.y = shipAnim.startPos.y + Math.sin(t * 2) * anim.radius * 0.5;
+      shipAnim.model.position.z = shipAnim.startPos.z + Math.cos(t) * anim.radius;
+    }
+  });
 
   if (actions.idle && actions.walk && actions.turn) enforceLocomotionEachFrame();
 
