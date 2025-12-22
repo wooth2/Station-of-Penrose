@@ -50,7 +50,7 @@ class ScenarioManager {
 
   // 2. "펜로즈의 정거장에 오신 것을 환영합니다!" -> 클릭
   async step2_welcome() {
-    await window.showSubtitle('펜로즈의 정거장에 오신 것을 환영합니다!', 999999, null, true);
+    await window.showSubtitle('펜로즈의 정거장에 오신 것을 환영합니다!<br>(클릭 시 다음으로 넘어갑니다)', 999999, null, true);
     await this.step3_gravity();
   }
 
@@ -919,7 +919,7 @@ const spaceShipAnimations = [];
 let mapRoot = null;
 
 gltfLoader.load(
-  './models/texture5.glb',
+  './models/texture_final.glb',
   (gltf) => {
     mapRoot = setupStaticModelNoCenter(gltf.scene);
     mapRoot.position.set(0, 0, 0);
@@ -928,7 +928,7 @@ gltfLoader.load(
 
     worldGroup.add(mapRoot);
 
-    console.log('texture5.glb 로드 완료');
+    console.log('texture_final.glb 로드 완료');
 
     // (1) 카메라를 맵 중심으로 평행이동 (고정 포즈 자체를 이동)
     recenterFixedPoseToMap(mapRoot);
@@ -962,18 +962,18 @@ gltfLoader.load(
     loadSpaceAssets();
   },
   undefined,
-  (err) => console.error('texture5.glb 로드 실패', err)
+  (err) => console.error('texture_final.glb 로드 실패', err)
 );
 
 // =====================
 // 우주선 3개 로드 및 배치
-// - texture5.glb의 실제 위치 기준으로 상하좌우에 배치
+// - texture_final.glb의 실제 위치 기준으로 상하좌우에 배치
 // - worldGroup에 추가하여 맵과 함께 이동
 // - Perspective에서도 보이도록 worldGroup에 추가
 // - 각 우주선은 느린 속도로 서로 다른 방향으로 이동
 // =====================
 function loadSpaceAssets() {
-  // texture5.glb(mapRoot)의 위치를 기준으로 상대 위치 계산
+  // texture_final.glb(mapRoot)의 위치를 기준으로 상대 위치 계산
   if (!mapRoot) {
     console.error('mapRoot가 아직 로드되지 않았습니다.');
     return;
