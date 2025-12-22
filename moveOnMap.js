@@ -20,6 +20,15 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 // ------- 기본 세팅 -------
 const scene = new THREE.Scene();
 
+// =====================
+// World group (Ortho drag pan용)
+// - Ortho에서 마우스 드래그로 "화면이 움직이는 것처럼" 보이게 만들기 위해
+//   카메라를 움직이지 않고(map/character만) worldGroup을 평행이동한다.
+// - 배경(orthoBgScene)은 별도 씬에서 렌더링되므로 worldGroup 이동의 영향을 받지 않는다.
+// =====================
+const worldGroup = new THREE.Group();
+scene.add(worldGroup);
+
 // Perspective orbit target (map 중심)
 const mapFocusTarget = new THREE.Vector3(0, 0, 0);
 
@@ -215,6 +224,86 @@ const orbitControls = new OrbitControls(activeCamera, renderer.domElement);
 orbitControls.enableDamping = true;
 orbitControls.enabled = true;
 applyControlsForView();
+
+// =====================
+// Ortho: 마우스 드래그로 화면 이동(배경 고정, 맵/캐릭터만 이동)
+// - 카메라는 고정한 채 worldGroup만 카메라 평면 방향으로 이동
+// - zoom 값은 "드래그 감도"(화면에 보이는 월드 크기)에만 반영
+// - lil-gui 위에서 드래그할 땐 무시
+// =====================
+const orthoDrag = {
+  active: false,
+  startX: 0,
+  startY: 0,
+  startPos: new THREE.Vector3(),
+};
+
+function isEventOnGUI(ev) {
+  const t = ev?.target;
+  if (!t || typeof t.closest !== 'function') return false;
+  return !!t.closest('.lil-gui');
+}
+
+function getOrthoUnitsPerPixel() {
+  // Ortho에서 화면에 보이는 월드 크기 (zoom 포함)
+  const viewW = Math.abs(orthoCamera.right - orthoCamera.left) / Math.max(orthoCamera.zoom, 1e-6);
+  const viewH = Math.abs(orthoCamera.top - orthoCamera.bottom) / Math.max(orthoCamera.zoom, 1e-6);
+  const w = Math.max(renderer.domElement.clientWidth, 1);
+  const h = Math.max(renderer.domElement.clientHeight, 1);
+  return {
+    x: viewW / w,
+    y: viewH / h,
+  };
+}
+
+function getOrthoCameraRightUp() {
+  // 카메라 화면 기준 right/up (월드 좌표)
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(orthoCamera.quaternion).normalize();
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(orthoCamera.quaternion).normalize();
+  return { right, up };
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!isOrthoView) return;
+  if (e.button !== 0) return; // left only
+  if (isEventOnGUI(e)) return;
+
+  orthoDrag.active = true;
+  orthoDrag.startX = e.clientX;
+  orthoDrag.startY = e.clientY;
+  orthoDrag.startPos.copy(worldGroup.position);
+
+  try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+  e.preventDefault();
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!isOrthoView) return;
+  if (!orthoDrag.active) return;
+  if (isEventOnGUI(e)) return;
+
+  const dx = e.clientX - orthoDrag.startX;
+  const dy = e.clientY - orthoDrag.startY;
+
+  const u = getOrthoUnitsPerPixel();
+  const { right, up } = getOrthoCameraRightUp();
+
+  // 커서 이동 방향으로 콘텐츠가 따라오게(worldGroup 이동)
+  worldGroup.position.copy(orthoDrag.startPos)
+    .addScaledVector(right, dx * u.x)
+    .addScaledVector(up, -dy * u.y);
+
+  e.preventDefault();
+});
+
+function endOrthoDrag(e) {
+  if (!orthoDrag.active) return;
+  orthoDrag.active = false;
+  try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+}
+
+renderer.domElement.addEventListener('pointerup', endOrthoDrag);
+renderer.domElement.addEventListener('pointercancel', endOrthoDrag);
 
 // FIXED POSE(캡처 값) - Ortho/Persp 공통으로 사용
 const ORTHO_FIXED_POSE = {
@@ -586,7 +675,7 @@ gltfLoader.load(
     mapRoot.rotation.set(0, 0, 0);
     mapRoot.scale.setScalar(1);
 
-    scene.add(mapRoot);
+    worldGroup.add(mapRoot);
 
     console.log('triangle_final.glb 로드 완료');
 
@@ -739,7 +828,7 @@ const TARGET_CORNER_RAD = Math.PI / 2;    // 90deg
 
 // Character group
 const actorGroup = new THREE.Group();
-scene.add(actorGroup);
+worldGroup.add(actorGroup);
 updateCharacterVisibility();
 
 
