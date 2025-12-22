@@ -1151,22 +1151,46 @@ async function initCharacter() {
 initCharacter().catch((err) => console.error(err));
 
 // Input (character only)
+// NOTE:
+// Ortho <-> Perspective 토글을 반복하면, 어떤 환경에서는 OrbitControls/GUI 쪽 key handler가
+// bubble 단계에서 이벤트를 소비해서 w/t가 안 먹는 현상이 생길 수 있다.
+// 그래서 'capture' 단계에서 먼저 잡아서(가장 먼저 실행) Ortho일 때만 처리한다.
 window.addEventListener('blur', () => {
   wDown = false;
 });
 
-window.addEventListener('keydown', (e) => {
-  const key = e.key.toLowerCase();
-  if (key === 'w') wDown = true;
-  if (key === 't') {
-    if (!params.corner && !cornerActive) startTurn();
-  }
-});
+// capture 단계에서 먼저 처리
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (!isOrthoView) return;
 
-window.addEventListener('keyup', (e) => {
-  const key = e.key.toLowerCase();
-  if (key === 'w') wDown = false;
-});
+    const key = (e.key || '').toLowerCase();
+    if (key === 'w') {
+      wDown = true;
+      e.preventDefault();
+    }
+    if (key === 't') {
+      if (!params.corner && !cornerActive) startTurn();
+      e.preventDefault();
+    }
+  },
+  { capture: true }
+);
+
+document.addEventListener(
+  'keyup',
+  (e) => {
+    if (!isOrthoView) return;
+
+    const key = (e.key || '').toLowerCase();
+    if (key === 'w') {
+      wDown = false;
+      e.preventDefault();
+    }
+  },
+  { capture: true }
+);
 
 
 // ------- 렌더 루프 -------
