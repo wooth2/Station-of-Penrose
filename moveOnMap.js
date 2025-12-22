@@ -15,41 +15,155 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ------- 기본 세팅 -------
 const scene = new THREE.Scene();
 
-// Skybox Mesh (크기 조절 가능 + 카메라 따라다님)
-const skyTexture = new THREE.TextureLoader().load(
-  './models/blackSky.jpg',
-  (t) => {
-    t.colorSpace = THREE.SRGBColorSpace;
+// Perspective orbit target (map 중심)
+const mapFocusTarget = new THREE.Vector3(0, 0, 0);
 
-    // (선택) 별이 너무 크/작으면 반복으로 조절 가능
-    // t.wrapS = THREE.RepeatWrapping;
-    // t.wrapT = THREE.RepeatWrapping;
-    // t.repeat.set(4, 4); // 숫자↑ => 패턴 더 촘촘 (별이 작아짐)
+// =====================
+// Background (CubeTexture) - 17-env-map-static 방식
+// - scene.background 에 CubeTexture 를 설정
+// - blackSky.jpg 는 1024x2048(세로로 김)이라 cubemap face(정사각형) 조건을 만족시키기 위해
+//   런타임에서 가운데를 정사각형으로 크롭해서 6면에 동일하게 복제해서 사용
+// - 일부 환경/버전에서 Orthographic + scene.background(CubeTexture)가 하얗게 보이는 경우가 있어,
+//   Ortho 전용으로 skybox mesh(카메라를 따라다니는 큰 박스)도 함께 준비해 fallback으로 사용
+// =====================
 
-    t.needsUpdate = true;
-  },
-  undefined,
-  (err) => console.error('Skybox 이미지 로드 실패', err)
-);
+const SKY_IMAGE_PATH = './models/blackSky.jpg';
+const SKY_URLS = [SKY_IMAGE_PATH, SKY_IMAGE_PATH, SKY_IMAGE_PATH, SKY_IMAGE_PATH, SKY_IMAGE_PATH, SKY_IMAGE_PATH];
 
-const skyMat = new THREE.MeshBasicMaterial({
-  map: skyTexture,
-  side: THREE.BackSide,
-  depthWrite: false, // skybox가 depth를 덮지 않게
-  depthTest: false,  // (중요) depth 테스트도 끄면 더 안정적
-});
-skyMat.toneMapped = false; // 톤매핑 영향 제거
+let skyCubeTexture = null;   // Perspective에서 사용할 scene.background(CubeTexture)
 
-const skyBox = new THREE.Mesh(
-  new THREE.BoxGeometry(5000, 5000, 5000), // 여기 크게 키우면 됨
-  skyMat
-);
-skyBox.frustumCulled = false; // 컬링 방지
-scene.add(skyBox);
+// Ortho 전용: 무한 타일 배경(화면 고정 쿼드 + texture.repeat)
+// - scene.background 는 Ortho에서 끔
+// - 카메라 zoom/이동에 따라 repeat/offset 을 갱신해서 "무한히 이어지는" 느낌
+// - "3배 더 크게": 초기 Ortho 뷰에서 타일 1장의 세로 길이가 화면 세로 길이와 같도록(기존 3x3 대비 3배)
+const SKY_IMAGE_ASPECT = 1024 / 2048; // blackSky.jpg 원본 비율 (w/h = 0.5)
+
+let orthoBgScene = null;
+let orthoBgCam = null;
+let orthoBgMesh = null;
+let orthoBgTex = null;
+let orthoBgBaseTileH = null; // world units
+let orthoBgBaseTileW = null; // world units
+
+function cropCenterSquareToCanvas(img) {
+  const size = Math.min(img.width, img.height);
+  const sx = Math.floor((img.width - size) / 2);
+  const sy = Math.floor((img.height - size) / 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
+  return canvas;
+}
+
+
+function ensureOrthoBackgroundPlane() {
+  if (orthoBgScene) return;
+
+  // 1) 화면 고정 배경용 씬 + 카메라(NDC)
+  orthoBgScene = new THREE.Scene();
+  orthoBgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  orthoBgScene.add(orthoBgCam);
+
+  // 2) fullscreen quad (NDC)
+  const quadGeo = new THREE.PlaneGeometry(2, 2);
+
+  const texLoader = new THREE.TextureLoader();
+  texLoader.load(
+    SKY_IMAGE_PATH,
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1, 1);
+      tex.offset.set(0, 0);
+      tex.needsUpdate = true;
+      orthoBgTex = tex;
+
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        depthTest: false,
+        depthWrite: false,
+      });
+      orthoBgMesh = new THREE.Mesh(quadGeo, mat);
+      orthoBgMesh.frustumCulled = false;
+      orthoBgMesh.renderOrder = -10000;
+      orthoBgScene.add(orthoBgMesh);
+
+      // "3배 더 크게": 초기 Ortho 뷰에서 타일 1장의 세로 길이 == 화면 세로 길이
+      // (기존 3x3 타일 대비 3배 크기)
+      // IMPORTANT:
+      // Ortho에서 zoom in/out 해도 배경은 "그대로"(화면에 고정된 크기) 보여야 한다.
+      // 그래서 타일 기준 크기는 orthoCamera.zoom 영향을 받지 않게 잡는다.
+      const baseW = Math.abs(orthoCamera.right - orthoCamera.left);
+      const baseH = Math.abs(orthoCamera.top - orthoCamera.bottom);
+      const viewH = baseH; // zoom 무시
+      orthoBgBaseTileH = viewH;
+      orthoBgBaseTileW = orthoBgBaseTileH * SKY_IMAGE_ASPECT;
+
+      updateOrthoBackgroundTiling();
+    },
+    undefined,
+    (err) => console.error('Ortho 배경 이미지 로드 실패', err)
+  );
+}
+
+function updateOrthoBackgroundTiling() {
+  if (!orthoBgTex || !orthoBgBaseTileH || !orthoBgBaseTileW) return;
+
+  // IMPORTANT:
+  // zoom은 배경에 영향을 주면 안 된다. (zoom해도 배경이 확대/축소되 ...)
+  // 따라서 viewW/viewH 계산에서 orthoCamera.zoom을 쓰지 않는다.
+  const baseW = Math.abs(orthoCamera.right - orthoCamera.left);
+  const baseH = Math.abs(orthoCamera.top - orthoCamera.bottom);
+  const viewW = baseW;
+  const viewH = baseH;
+
+  // 화면에 보이는 월드 크기 / 타일 월드 크기 = 반복 횟수
+  const repX = Math.max(viewW / orthoBgBaseTileW, 1e-6);
+  const repY = Math.max(viewH / orthoBgBaseTileH, 1e-6);
+  orthoBgTex.repeat.set(repX, repY);
+
+  // 카메라 이동에 따라 패턴이 "월드에 붙어있는 것처럼" 흐르게
+  const offX = -orthoCamera.position.x / orthoBgBaseTileW;
+  const offY = -orthoCamera.position.y / orthoBgBaseTileH;
+  // RepeatWrapping에서 offset은 0~1 범위로 맞춰주는 게 안정적
+  orthoBgTex.offset.set(((offX % 1) + 1) % 1, ((offY % 1) + 1) % 1);
+  orthoBgTex.needsUpdate = true;
+}
+
+
+function loadSkyBackground() {
+  const imgLoader = new THREE.ImageLoader();
+  imgLoader.load(
+    SKY_IMAGE_PATH,
+    (img) => {
+      if (!img || !img.width || !img.height) {
+        console.error('Sky 이미지 로드 실패(이미지 데이터 없음)');
+        return;
+      }
+
+      const canvasSquare = cropCenterSquareToCanvas(img);
+
+      // scene.background (CubeTexture)
+      const canvases = new Array(6).fill(0).map(() => canvasSquare);
+      skyCubeTexture = new THREE.CubeTexture(canvases);
+      skyCubeTexture.colorSpace = THREE.SRGBColorSpace;
+      skyCubeTexture.needsUpdate = true;
+    },
+    undefined,
+    (err) => console.error('Sky 이미지 로드 실패', err)
+  );
+}
+loadSkyBackground();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -88,6 +202,10 @@ scene.add(orthoCamera);
 let activeCamera = orthoCamera;
 let isOrthoView = true;
 
+// 초기 Ortho에서는 CubeTexture background를 사용하지 않고 Plane 배경 사용
+scene.background = null;
+ensureOrthoBackgroundPlane();
+
 // Stats
 const stats = new Stats();
 document.body.appendChild(stats.dom);
@@ -96,12 +214,139 @@ document.body.appendChild(stats.dom);
 const orbitControls = new OrbitControls(activeCamera, renderer.domElement);
 orbitControls.enableDamping = true;
 orbitControls.enabled = true;
+applyControlsForView();
 
 // FIXED POSE(캡처 값) - Ortho/Persp 공통으로 사용
 const ORTHO_FIXED_POSE = {
-  cam: new THREE.Vector3(-5.367, 14.489, 7.639),
-  target: new THREE.Vector3(-14.909, 5.006, -1.902),
+  cam: new THREE.Vector3(9.542, 12.483, 9.541),
+  target: new THREE.Vector3(0, 3, 0),
 };
+
+// Perspective view should be closer to the map center so that the map size feels similar to Ortho
+const PERS_CLOSE_FACTOR = 0.125; // bring camera to 1/4 of (camera->mapFocusTarget) distance
+
+// Perspective orbit target (map 중심)
+mapFocusTarget.copy(ORTHO_FIXED_POSE.target);
+
+// Camera UI
+const cameraParams = {
+  mode: 'Orthographic',
+  camX: ORTHO_FIXED_POSE.cam.x,
+  camY: ORTHO_FIXED_POSE.cam.y,
+  camZ: ORTHO_FIXED_POSE.cam.z,
+  tgtX: ORTHO_FIXED_POSE.target.x,
+  tgtY: ORTHO_FIXED_POSE.target.y,
+  tgtZ: ORTHO_FIXED_POSE.target.z,
+  toggleView: () => {
+    isOrthoView = !isOrthoView;
+    activeCamera = isOrthoView ? orthoCamera : mapPerspCamera;
+
+    // 배경 처리
+    if (isOrthoView) {
+      // Ortho에서는 CubeTexture background를 끄고(흰 화면 이슈 회피),
+      // blackSky.jpg를 사각형 그대로 Plane으로 띄운다.
+      scene.background = null;
+      ensureOrthoBackgroundPlane();
+      updateOrthoBackgroundTiling();
+    } else {
+      // Perspective에서는 CubeTexture background 사용
+      if (skyCubeTexture) scene.background = skyCubeTexture;
+    }
+
+    // When entering Ortho, stop any residual OrbitControls damping/inertia and snap to fixed pose
+    if (isOrthoView) {
+      enterOrthoAndFreeze();
+      orbitControls.object = activeCamera;
+      orbitControls.enabled = true;
+
+      applyFixedPoseTo(activeCamera);
+      commitOrthoHomeState();
+    } else {
+      orbitControls.object = activeCamera;
+      orbitControls.enabled = true;
+
+      // Perspective: keep targeting the map and move closer so the map size feels similar to Ortho
+      applyControlsForView(); // sets target to mapFocusTarget
+      applyPerspectiveClosePose();
+    }
+
+    applyControlsForView();
+
+    cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
+
+    // Perspective에서는 캐릭터 숨김
+    updateCharacterVisibility();
+  },
+};
+
+
+function applyFixedPoseFromParams() {
+  ORTHO_FIXED_POSE.cam.set(cameraParams.camX, cameraParams.camY, cameraParams.camZ);
+  ORTHO_FIXED_POSE.target.set(cameraParams.tgtX, cameraParams.tgtY, cameraParams.tgtZ);
+
+  // Apply to whichever camera is active right now
+  if (activeCamera) {
+    activeCamera.position.copy(ORTHO_FIXED_POSE.cam);
+    activeCamera.lookAt(ORTHO_FIXED_POSE.target);
+    activeCamera.updateProjectionMatrix();
+  }
+  if (orbitControls) {
+    orbitControls.target.copy(ORTHO_FIXED_POSE.target);
+    orbitControls.update();
+  }
+  commitOrthoHomeState();
+}
+
+function clearOrbitInertia() {
+  // OrbitControls has internal deltas; clear them if present to avoid "residual velocity"
+  try {
+    if (orbitControls && orbitControls.sphericalDelta) orbitControls.sphericalDelta.set(0, 0, 0);
+    if (orbitControls && orbitControls.panOffset) orbitControls.panOffset.set(0, 0, 0);
+    if (orbitControls) orbitControls.scale = 1;
+  } catch (_) {}
+}
+
+
+function commitOrthoHomeState() {
+  // Make OrbitControls.reset() return to the current fixed ortho pose.
+  if (!orbitControls || !orthoCamera) return;
+  const prevObj = orbitControls.object;
+  orbitControls.object = orthoCamera;
+
+  // Force exact pose
+  orthoCamera.position.copy(ORTHO_FIXED_POSE.cam);
+  orthoCamera.lookAt(ORTHO_FIXED_POSE.target);
+  orthoCamera.updateMatrixWorld(true);
+
+  orbitControls.target.copy(ORTHO_FIXED_POSE.target);
+  orbitControls.update();
+
+  // Save as "home" (used by orbitControls.reset())
+  if (typeof orbitControls.saveState === 'function') orbitControls.saveState();
+
+  orbitControls.object = prevObj;
+}
+
+function enterOrthoAndFreeze() {
+  // 1) kill any damping/inertia from perspective orbiting
+  // 2) snap ortho camera to the fixed pose and keep it there
+  if (!orbitControls) return;
+
+  const prevDamping = orbitControls.enableDamping;
+  orbitControls.enableDamping = false;
+
+  clearOrbitInertia();
+
+  // reset to last committed ortho home state (or whatever OrbitControls currently saved)
+  if (typeof orbitControls.reset === 'function') orbitControls.reset();
+
+  // enforce fixed pose again (reset can be slightly off when damping was active)
+  applyFixedOrthoPose();
+
+  orbitControls.update();
+  orbitControls.enableDamping = prevDamping;
+}
+
 
 // 조작 잠금 옵션
 const orthoLock = {
@@ -125,6 +370,46 @@ const orthoDebug = {
 };
 
 // 어떤 카메라든 동일 pose(위치+타겟) 적용
+
+function applyControlsForView() {
+  if (isOrthoView) {
+    // overview: lock rotate/pan, allow zoom
+    orbitControls.enableRotate = false;
+    orbitControls.enablePan = false;
+    orbitControls.enableZoom = true;
+  } else {
+    // perspective: orbit around the map (triangle_final.glb)
+    orbitControls.enableRotate = true;
+    orbitControls.enablePan = true;
+    orbitControls.enableZoom = true;
+
+    orbitControls.target.copy(mapFocusTarget);
+  }
+  orbitControls.enableDamping = true;
+  orbitControls.enableKeys = false;
+  orbitControls.update();
+}
+
+function applyPerspectiveClosePose() {
+  // Place the perspective camera closer to the map center (mapFocusTarget),
+  // keeping the same viewing direction as the current camera pose.
+  const cam = mapPerspCamera;
+  const target = mapFocusTarget.clone();
+
+  const currentDist = cam.position.distanceTo(target);
+  if (currentDist > 1e-6) {
+    const dir = new THREE.Vector3().subVectors(cam.position, target).normalize(); // from target to cam
+    const desiredDist = currentDist * PERS_CLOSE_FACTOR;
+    cam.position.copy(target).add(dir.multiplyScalar(desiredDist));
+  }
+  cam.lookAt(target);
+  cam.updateMatrixWorld(true);
+
+  orbitControls.object = cam;
+  orbitControls.target.copy(target);
+  orbitControls.update();
+}
+
 function applyFixedPoseTo(cam) {
   cam.position.copy(ORTHO_FIXED_POSE.cam);
   orbitControls.target.copy(ORTHO_FIXED_POSE.target);
@@ -134,12 +419,9 @@ function applyFixedPoseTo(cam) {
 
   orbitControls.object = cam;
   orbitControls.update();
-
-  // controls 제한
-  orbitControls.enableRotate = !orthoLock.lockRotate;
-  orbitControls.enablePan = !orthoLock.lockPan;
-  orbitControls.enableZoom = !orthoLock.lockZoom;
+  // controls are set by view
 }
+
 
 function applyFixedOrthoPose() {
   applyFixedPoseTo(orthoCamera);
@@ -186,6 +468,7 @@ function onResize() {
   orthoCamera.top = orthoSize;
   orthoCamera.bottom = -orthoSize;
   orthoCamera.updateProjectionMatrix();
+  updateOrthoBackgroundTiling();
 
   renderer.setSize(w, h);
 
@@ -311,7 +594,26 @@ gltfLoader.load(
     recenterFixedPoseToMap(mapRoot);
 
     // (2) 초기 줌아웃 (조금 멀리)
-    zoomOutFixedPose(1.25);
+    zoomOutFixedPose(4.0);
+
+// (2.5) triangle_final.glb 를 카메라로부터 4배 더 멀리 (카메라->타겟 방향으로 '타겟 너머'로 이동)
+{
+  const cam = ORTHO_FIXED_POSE.cam.clone();
+  const tgt = ORTHO_FIXED_POSE.target.clone();
+  const dir = new THREE.Vector3().subVectors(tgt, cam);
+  const dist = dir.length();
+  if (dist > 1e-6) {
+    dir.normalize();
+    const delta = dir.multiplyScalar(dist * 3); // cam->(tgt+delta) = 4*dist
+    mapRoot.position.add(delta);
+
+    // Perspective orbit target: map center moved along the same line
+    mapFocusTarget.copy(tgt).add(delta);
+  } else {
+    mapFocusTarget.copy(tgt);
+  }
+}
+
 
     // (3) 현재 뷰(초기: Ortho)에 고정 포즈 적용
     applyFixedPoseTo(activeCamera);
@@ -371,6 +673,15 @@ camFolder.add(orthoDebug, 'tgtZ').listen();
 camFolder.add(orthoDebug, 'rotX').listen();
 camFolder.add(orthoDebug, 'rotY').listen();
 camFolder.add(orthoDebug, 'rotZ').listen();
+
+camFolder.add(cameraParams, 'camX', -200, 200, 0.01).name('camX').onChange(applyFixedPoseFromParams);
+camFolder.add(cameraParams, 'camY', -200, 200, 0.01).name('camY').onChange(applyFixedPoseFromParams);
+camFolder.add(cameraParams, 'camZ', -200, 200, 0.01).name('camZ').onChange(applyFixedPoseFromParams);
+camFolder.add(cameraParams, 'tgtX', -200, 200, 0.01).name('tgtX').onChange(applyFixedPoseFromParams);
+camFolder.add(cameraParams, 'tgtY', -200, 200, 0.01).name('tgtY').onChange(applyFixedPoseFromParams);
+camFolder.add(cameraParams, 'tgtZ', -200, 200, 0.01).name('tgtZ').onChange(applyFixedPoseFromParams);
+camFolder.add({ applyPose: applyFixedPoseFromParams }, 'applyPose').name('Apply Pose');
+
 camFolder.open();
 
 // =====================
@@ -382,25 +693,515 @@ window.addEventListener('keydown', (e) => {
     isOrthoView = !isOrthoView;
 
     activeCamera = isOrthoView ? orthoCamera : mapPerspCamera;
+    // When entering Ortho, stop any residual OrbitControls damping/inertia and snap to fixed pose
+    if (isOrthoView) {
+      enterOrthoAndFreeze();
+    }
     orbitControls.object = activeCamera;
     orbitControls.enabled = true;
 
     // 토글 시점에만: Ortho/Persp 모두 동일한 고정 pose 적용
     applyFixedPoseTo(activeCamera);
+    applyControlsForView();
+    if (typeof cameraParams !== 'undefined') cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
+
+    // Perspective에서는 캐릭터 숨김
+    updateCharacterVisibility();
   }
 });
 
+
+// =====================
+// Character (FBX + Animations)
+// - astronaut.fbx + idle/walk/turn
+// - w: walk(hold), t: turn180(one-shot)
+// =====================
+const CHAR_ASSET_PATH = './assets/models/';
+const CHAR_FILE_MODEL = 'astronaut.fbx';
+const CHAR_FILE_IDLE  = 'Standing W_Briefcase Idle.fbx';
+const CHAR_FILE_WALK  = 'Walking.fbx';
+const CHAR_FILE_TURN  = 'Turn180.fbx';
+
+const CHAR_FADE = 0.18;
+
+// base walk speed moved to params.walkSpeed
+
+
+const LOCAL_FORWARD = new THREE.Vector3(0, 0, 1);
+const LOCAL_UP      = new THREE.Vector3(0, 1, 0);
+const LOCAL_RIGHT   = new THREE.Vector3(1, 0, 0);
+
+const CUBE_SIZE = 2;
+const CUBE_HALF = CUBE_SIZE / 2;          // 1
+let CUBE_TOP_Y = 7;                       // 캐릭터가 서 있는 "지면(상단)" 높이
+const TARGET_CORNER_RAD = Math.PI / 2;    // 90deg
+
+
+// Character group
+const actorGroup = new THREE.Group();
+scene.add(actorGroup);
+updateCharacterVisibility();
+
+
+// Perspective에서는 캐릭터를 숨김
+function updateCharacterVisibility() {
+  if (typeof actorGroup !== 'undefined') {
+    actorGroup.visible = !!isOrthoView;
+  }
+}
+// GUI params (character only)
+const characterParams = {
+  scale: 0.01,
+  x: 0,
+  y: 7, // ground height reference
+  z: 0,
+};
+actorGroup.scale.setScalar(characterParams.scale);
+actorGroup.position.set(characterParams.x, characterParams.y, characterParams.z);
+CUBE_TOP_Y = characterParams.y;
+
+
+// movement/corner params (ported from main7)
+const params = {
+  corner: false,
+  turnSpeedDeg: 60,
+  distance: 1,
+  characterScale: characterParams.scale,
+  walkSpeed: 120,
+};
+
+// Auto-corner checker (distance-based)
+const cornerPosition = 9;
+let walkedDistance = 3; // min 0, grows by walked distance, resets on auto-corner
+let autoCornerArmed = false;
+let autoCornerArmAt = 0;
+const AUTO_CORNER_RELEASE_SEC = 0.5;
+
+const charFolder = gui.addFolder('Character');
+charFolder.add(characterParams, 'scale', 0.001, 0.05, 0.001).name('scale').onChange((v) => {
+  actorGroup.scale.setScalar(v);
+  params.characterScale = v;
+});
+charFolder.add(characterParams, 'x', -50, 50, 0.01).name('x').onChange((v) => (actorGroup.position.x = v));
+charFolder.add(characterParams, 'y', -10, 10, 0.01).name('y').onChange((v) => (actorGroup.position.y = v));
+charFolder.add(characterParams, 'z', -50, 50, 0.01).name('z').onChange((v) => (actorGroup.position.z = v));
+charFolder.add(params, 'walkSpeed', 0, 200, 1).name('walkSpeed');
+charFolder.open();
+
+let cornerCtrl = null;
+
+// movement/corner params (ported from main7)
+
+// keep constants in sync with GUI
+charFolder.controllers?.forEach(() => {}); // no-op (lil-gui compat)
+charFolder.__controllers?.forEach(() => {}); // legacy no-op
+
+// scale/y change hooks
+// (we also keep params.characterScale + CUBE_TOP_Y aligned)
+const _scaleCtrl = charFolder.controllers?.find?.((c) => c._name === 'scale');
+const _yCtrl = charFolder.controllers?.find?.((c) => c._name === 'y');
+
+const cornerFolder = gui.addFolder('Corner');
+cornerCtrl = cornerFolder.add(params, 'corner').name('corner');
+cornerFolder.add(params, 'turnSpeedDeg', 10, 360, 1).name('turnSpeedDeg');
+cornerFolder.add(params, 'distance', 0, 4, 0.01).name('distance');
+cornerFolder.open();
+
+// Ensure camera pose params exist on cameraParams (for GUI numeric controls)
+cameraParams.camX ??= ORTHO_FIXED_POSE.cam.x;
+cameraParams.camY ??= ORTHO_FIXED_POSE.cam.y;
+cameraParams.camZ ??= ORTHO_FIXED_POSE.cam.z;
+cameraParams.tgtX ??= ORTHO_FIXED_POSE.target.x;
+cameraParams.tgtY ??= ORTHO_FIXED_POSE.target.y;
+cameraParams.tgtZ ??= ORTHO_FIXED_POSE.target.z;
+
+
+cameraParams.mode = isOrthoView ? 'Orthographic' : 'Perspective';
+
+// Reuse existing camFolder (defined earlier in this file) to avoid redeclaration.
+camFolder.add(cameraParams, 'toggleView').name('Toggle View');
+camFolder.add(cameraParams, 'mode').name('Mode').listen();
+camFolder.open();
+
+
+// FBX loader helpers
+const fbxLoader = new FBXLoader();
+fbxLoader.setPath(CHAR_ASSET_PATH);
+
+function loadFBX(filename) {
+  return new Promise((resolve, reject) => {
+    fbxLoader.load(filename, resolve, undefined, reject);
+  });
+}
+
+// Animation state
+let characterRoot = null;
+let mixer = null;
+
+const actions = { idle: null, walk: null, turn: null };
+let currentAction = null;
+
+let wDown = false;
+let isTurning = false;
+
+let isLeft = true; // initial True
+
+// corner state (ported from main7)
+let cornerActive = false;
+let cornerAngle = 0;
+const cornerStartPos = new THREE.Vector3();
+const cornerStartQuat = new THREE.Quaternion();
+const cornerEndQuat = new THREE.Quaternion();
+const F0 = new THREE.Vector3();
+const U0 = new THREE.Vector3();
+const R0 = new THREE.Vector3();
+const pivotW0 = new THREE.Vector3();
+
+const cornerStartSoleW = new THREE.Vector3();
+const cornerTargetSoleW = new THREE.Vector3();
+
+
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const q180 = new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.PI);
+const turnStartQuat = new THREE.Quaternion();
+const turnEndQuat = new THREE.Quaternion();
+let turnDuration = 0;
+
+const charClock = new THREE.Clock();
+let soleLocalY = 0;
+
+function switchAction(next, fade = CHAR_FADE) {
+  if (!next || next === currentAction) return;
+
+  next.enabled = true;
+  next.reset();
+  next.setEffectiveTimeScale(1);
+  next.setEffectiveWeight(1);
+  next.play();
+
+  if (currentAction) currentAction.crossFadeTo(next, fade, false);
+  else next.fadeIn(fade);
+
+  currentAction = next;
+}
+
+function enforceLocomotionEachFrame() {
+  if (isTurning) return;
+  const desired = wDown ? actions.walk : actions.idle;
+  if (desired && desired !== currentAction) switchAction(desired);
+}
+
+
+function getSoleWorld() {
+  const soleLocal = new THREE.Vector3(0, soleLocalY * params.characterScale, 0);
+  return actorGroup.localToWorld(soleLocal);
+}
+
+
+
+function beginCornerIfNeeded() {
+  if (cornerActive) return;
+  if (!params.corner) return;
+  if (!wDown) return;
+  if (isTurning) return;
+  if (currentAction !== actions.walk) return;
+
+  cornerActive = true;
+  cornerAngle = 0;
+
+  cornerStartPos.copy(actorGroup.position);
+  cornerStartQuat.copy(actorGroup.quaternion);
+
+  F0.copy(LOCAL_FORWARD).applyQuaternion(cornerStartQuat).normalize();
+  U0.copy(LOCAL_UP).applyQuaternion(cornerStartQuat).normalize();
+  R0.copy(LOCAL_RIGHT).applyQuaternion(cornerStartQuat).normalize();
+
+  // pivot: top center에서 F0 방향으로 half만큼 이동한 top-front edge center
+  const topCenterW = new THREE.Vector3(actorGroup.position.x, CUBE_TOP_Y, actorGroup.position.z);
+  pivotW0.copy(topCenterW).addScaledVector(F0, CUBE_HALF);
+
+  // build end orientation (absolute) so that the final basis matches the requested mapping
+  // isLeft==true  : end = pitch(+90 around R0) then yaw(+90 around F0)
+  // isLeft==false : final up = -R0 and final forward = -U0 (=> right = +F0)
+  if (isLeft) {
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(R0, TARGET_CORNER_RAD);
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(F0, TARGET_CORNER_RAD);
+    cornerEndQuat.copy(cornerStartQuat).premultiply(qPitch).premultiply(qYaw);
+  } else {
+    const rightEnd = new THREE.Vector3().copy(F0);
+    const upEnd = new THREE.Vector3().copy(R0).multiplyScalar(-1);
+    const forwardEnd = new THREE.Vector3().copy(U0).multiplyScalar(-1);
+    const m = new THREE.Matrix4().makeBasis(rightEnd, upEnd, forwardEnd);
+    cornerEndQuat.setFromRotationMatrix(m);
+  }
+
+  // start/target sole positions
+  cornerStartSoleW.copy(getSoleWorld());
+
+  // target: corner 시작 지점(sole) 기준 "상대 오프셋"
+  const d = params.distance;
+  const s = isLeft ? +1 : -1;
+
+  cornerTargetSoleW
+    .copy(cornerStartSoleW)
+    .addScaledVector(R0, s * d)
+    .addScaledVector(U0, -d)
+    .addScaledVector(F0, +d);
+}
+
+function endCorner() {
+  cornerActive = false;
+  params.corner = false;
+  if (cornerCtrl && cornerCtrl.updateDisplay) cornerCtrl.updateDisplay();
+}
+
+function startTurn() {
+  // corner가 체크/진행 중이면 뒤로 돌기 금지
+  if (params.corner || cornerActive) return;
+  if (!actions.turn || isTurning) return;
+  isLeft = !isLeft;
+
+  isTurning = true;
+
+  turnStartQuat.copy(actorGroup.quaternion);
+  turnEndQuat.copy(turnStartQuat).multiply(q180);
+
+  actions.turn.enabled = true;
+  actions.turn.reset();
+  actions.turn.setLoop(THREE.LoopOnce, 1);
+  actions.turn.clampWhenFinished = true;
+  actions.turn.setEffectiveTimeScale(1);
+  actions.turn.setEffectiveWeight(1);
+
+  switchAction(actions.turn);
+}
+
+function onMixerFinished(e) {
+  if (!isTurning) return;
+  if (e?.action !== actions.turn) return;
+
+  actorGroup.quaternion.copy(turnEndQuat);
+  isTurning = false;
+  enforceLocomotionEachFrame();
+}
+
+function inferYawBoneName(clip, modelRoot) {
+  for (const tr of clip.tracks) {
+    if (!tr.name.endsWith('.quaternion')) continue;
+    const nodeName = tr.name.split('.')[0];
+    const obj = modelRoot.getObjectByName(nodeName);
+    if (obj && obj.isBone) return nodeName;
+  }
+  for (const tr of clip.tracks) {
+    if (tr.name.endsWith('.quaternion')) return tr.name.split('.')[0];
+  }
+  return null;
+}
+
+function stripQuaternionTracksForNode(clip, nodeName) {
+  if (!nodeName) return clip;
+  const kept = [];
+  for (const tr of clip.tracks) {
+    if (tr.name === `${nodeName}.quaternion`) continue;
+    kept.push(tr);
+  }
+  const stripped = new THREE.AnimationClip(clip.name, clip.duration, kept);
+  stripped.resetDuration();
+  return stripped;
+}
+
+
+
+async function initCharacter() {
+  characterRoot = await loadFBX(CHAR_FILE_MODEL);
+
+  characterRoot.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = false;
+    }
+  });
+
+  actorGroup.add(characterRoot);
+
+  // infer sole (min y) in local space for ground placement
+  const box = new THREE.Box3().setFromObject(characterRoot);
+  soleLocalY = box.min.y;
+
+  // place so sole touches y = characterParams.y
+  actorGroup.updateMatrixWorld(true);
+  const soleW = getSoleWorld();
+  actorGroup.position.y += (characterParams.y - soleW.y);
+  actorGroup.updateMatrixWorld(true);
+
+  mixer = new THREE.AnimationMixer(characterRoot);
+  mixer.addEventListener('finished', onMixerFinished);
+
+  const idleObj = await loadFBX(CHAR_FILE_IDLE);
+  const walkObj = await loadFBX(CHAR_FILE_WALK);
+  const turnObj = await loadFBX(CHAR_FILE_TURN);
+
+  actions.idle = mixer.clipAction(idleObj.animations[0]);
+  actions.walk = mixer.clipAction(walkObj.animations[0]);
+
+  const rawTurnClip = turnObj.animations[0];
+  const yawBoneName = inferYawBoneName(rawTurnClip, characterRoot);
+  const strippedTurnClip = stripQuaternionTracksForNode(rawTurnClip, yawBoneName);
+
+  actions.turn = mixer.clipAction(strippedTurnClip);
+  turnDuration = strippedTurnClip.duration;
+
+  actions.idle.setLoop(THREE.LoopRepeat);
+  actions.walk.setLoop(THREE.LoopRepeat);
+
+  wDown = false;
+  isTurning = false;
+  switchAction(actions.idle, 0);
+}
+
+initCharacter().catch((err) => console.error(err));
+
+// Input (character only)
+window.addEventListener('blur', () => {
+  wDown = false;
+});
+
+window.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if (key === 'w') wDown = true;
+  if (key === 't') {
+    if (!params.corner && !cornerActive) startTurn();
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  if (key === 'w') wDown = false;
+});
+
+
 // ------- 렌더 루프 -------
 function render() {
-  // 스카이박스를 항상 카메라 위치로 이동 (무한 배경처럼)
-  skyBox.position.copy(activeCamera.position);
 
   // Ortho이면 패널 업데이트
   if (isOrthoView) updateOrthoDebug();
 
   stats.update();
   if (orbitControls.enabled) orbitControls.update();
-  renderer.render(scene, activeCamera);
+
+  // character animation update
+  const dtChar = charClock.getDelta();
+  if (mixer) mixer.update(dtChar);
+
+  if (actions.idle && actions.walk && actions.turn) enforceLocomotionEachFrame();
+
+  // turn180: keep actorGroup orientation synced to start/end quats during the clip
+  if (isTurning && actions.turn && turnDuration > 0) {
+    const t = actions.turn.time;
+    const a = Math.min(Math.max(t / turnDuration, 0), 1);
+    actorGroup.quaternion.copy(turnStartQuat).slerp(turnEndQuat, a);
+  }
+
+if (!isTurning) beginCornerIfNeeded();
+
+// auto-corner can be released automatically if it doesn't actually start soon
+if (autoCornerArmed && !cornerActive) {
+  const waited = charClock.elapsedTime - autoCornerArmAt;
+  if (waited >= AUTO_CORNER_RELEASE_SEC) {
+    params.corner = false;
+    autoCornerArmed = false;
+    if (cornerCtrl && cornerCtrl.updateDisplay) cornerCtrl.updateDisplay();
+  }
+}
+
+  if (characterRoot && !isTurning && wDown && currentAction === actions.walk) {
+    if (!cornerActive) {
+      const forward = LOCAL_FORWARD.clone().applyQuaternion(actorGroup.quaternion).normalize();
+      const step = (params.walkSpeed * params.characterScale) * dtChar;
+      actorGroup.position.addScaledVector(forward, step);
+
+      // Auto-corner distance accumulation (no change while cornering/turning)
+// - isLeft == true  : walkedDistance increases, triggers at > cornerPosition then resets to 0
+// - isLeft == false : walkedDistance decreases, triggers at 0 then resets to cornerPosition
+      let shouldAutoCorner = false;
+      if (isLeft) {
+        walkedDistance = Math.max(0, walkedDistance + step);
+        if (walkedDistance > cornerPosition) {
+          walkedDistance = 0;
+          shouldAutoCorner = true;
+        }
+      } else {
+        walkedDistance = Math.max(0, walkedDistance - step);
+        if (walkedDistance <= 0) {
+          walkedDistance = cornerPosition;
+          shouldAutoCorner = true;
+        }
+      }
+
+      if (shouldAutoCorner) {
+
+        // arm an auto-corner check (can auto-release if it doesn't start)
+        params.corner = true;
+        autoCornerArmed = true;
+        autoCornerArmAt = charClock.elapsedTime;
+
+        if (cornerCtrl && cornerCtrl.updateDisplay) cornerCtrl.updateDisplay();
+      }
+
+      actorGroup.updateMatrixWorld(true);
+    } else {
+      const angStep = THREE.MathUtils.degToRad(params.turnSpeedDeg) * dtChar;
+      cornerAngle = Math.min(cornerAngle + angStep, TARGET_CORNER_RAD);
+      const alpha = cornerAngle / TARGET_CORNER_RAD;
+
+      // 1) absolute pose: reset to start, then apply axis rotations
+      actorGroup.position.copy(cornerStartPos);
+      actorGroup.quaternion.copy(cornerStartQuat);
+
+      if (isLeft) {
+        actorGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(R0, cornerAngle));
+        actorGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(F0, +cornerAngle));
+      } else {
+        actorGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(F0, -cornerAngle));
+        actorGroup.quaternion.premultiply(
+          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().copy(R0).multiplyScalar(-1), +cornerAngle)
+        );
+        actorGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(F0, Math.PI * alpha));
+      }
+      actorGroup.updateMatrixWorld(true);
+
+      // 2) sole target follows a quarter-circle trajectory
+      const d = params.distance;
+      const pivot = new THREE.Vector3().copy(cornerStartSoleW).addScaledVector(U0, -d);
+
+      const v = new THREE.Vector3().copy(U0).multiplyScalar(d);
+      v.applyAxisAngle(R0, cornerAngle);
+
+      const yawSign = isLeft ? +1 : -1;
+      const lateral = new THREE.Vector3().copy(R0).multiplyScalar(yawSign * d * Math.sin(cornerAngle));
+
+      const desiredSole = pivot.add(v).add(lateral);
+      const curSole = getSoleWorld();
+      const delta = desiredSole.sub(curSole);
+      actorGroup.position.add(delta);
+      actorGroup.updateMatrixWorld(true);
+
+      if (cornerAngle >= TARGET_CORNER_RAD - 1e-8) endCorner();
+    }
+  }
+
+  if (isOrthoView) {
+    // Ortho: scene.background를 끄고(이미 적용됨), 화면 고정 쿼드를 먼저 렌더링
+    updateOrthoBackgroundTiling();
+    renderer.autoClear = false;
+    renderer.clear();
+    if (orthoBgScene && orthoBgCam) renderer.render(orthoBgScene, orthoBgCam);
+    renderer.clearDepth();
+    renderer.render(scene, activeCamera);
+  } else {
+    renderer.autoClear = true;
+    renderer.render(scene, activeCamera);
+  }
 
   requestAnimationFrame(render);
 }
