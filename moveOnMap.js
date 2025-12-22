@@ -1,4 +1,4 @@
-// main.js
+// moveOnMap.js
 // - triangle_final.glb(삼각형 맵) 렌더링
 // - s키: Orthographic(overview) <-> Perspective(전체맵) 토글
 // - s를 누를 때마다 Ortho/Persp 둘 다 동일한 FIXED POSE(카메라 위치+타겟)로 고정 적용 (토글 시점에만)

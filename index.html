@@ -1,15 +1,11 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-    }
-  </style>
-
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>펜로즈의 정거장</title>
+  
+  <!-- Three.js Import Map -->
   <script type="importmap">
   {
     "imports": {
@@ -18,12 +14,616 @@
     }
   }
   </script>
+  
+  <style>
+    @font-face {
+      font-family: "Galmuri";
+      src: url("./fonts/Galmuri14.woff2") format("woff2");
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      overflow: hidden;
+      font-family: 'Galmuri', monospace;
+      background: #000;
+    }
+
+    /* 시작 화면 */
+    #start-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, #1a1a2e 0%, #000000 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 10001;
+      transition: opacity 1s ease-out;
+    }
+
+    #start-screen::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, rgba(26, 26, 46, 0.4) 0%, rgba(0, 0, 0, 0.7) 100%);
+      z-index: 1;
+    }
+
+    #start-screen canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.8;
+      filter: blur(0.5px);
+      z-index: 0;
+    }
+
+    #start-screen > * {
+      position: relative;
+      z-index: 2;
+    }
+
+    #key-guide.fading-out,
+    #subtitle-container.fading-out,
+    #button-container.fading-out {
+      opacity: 0 !important;
+      transition: opacity 1.2s ease;
+    }
+
+    #start-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .title {
+      font-size: 4rem;
+      color: #00ffff;
+      text-shadow: 
+        0 0 10px #00ffff,
+        0 0 20px #00ffff,
+        0 0 30px #00ffff,
+        0 0 40px #0088ff;
+      margin-bottom: 3rem;
+      letter-spacing: 0.3rem;
+      animation: titleGlow 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes titleGlow {
+      from {
+        text-shadow: 
+          0 0 10px #00ffff,
+          0 0 20px #00ffff,
+          0 0 30px #00ffff,
+          0 0 40px #0088ff;
+      }
+      to {
+        text-shadow: 
+          0 0 20px #00ffff,
+          0 0 30px #00ffff,
+          0 0 40px #00ffff,
+          0 0 50px #0088ff,
+          0 0 60px #0088ff;
+      }
+    }
+
+    .start-button {
+      padding: 1.5rem 3rem;
+      font-size: 1.5rem;
+      font-family: 'Courier New', monospace;
+      background: transparent;
+      color: #00ffff;
+      border: 2px solid #00ffff;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.2rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .start-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 255, 255, 0.3);
+      transition: left 0.3s ease;
+    }
+
+    .start-button:hover::before {
+      left: 100%;
+    }
+
+    .start-button:hover {
+      background: rgba(0, 255, 255, 0.1);
+      box-shadow: 
+        0 0 10px #00ffff,
+        0 0 20px #00ffff,
+        inset 0 0 10px rgba(0, 255, 255, 0.3);
+      transform: scale(1.05);
+    }
+
+    /* 자막 시스템 */
+    #subtitle-container {
+      position: fixed;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      max-width: 800px;
+      z-index: 99999;
+      pointer-events: none;
+    }
+
+    .subtitle {
+      background: linear-gradient(
+        135deg,
+        rgba(0, 20, 40, 0.98) 0%,
+        rgba(0, 10, 30, 0.95) 100%
+      );
+      border: 2px solid rgba(0, 255, 255, 0.8);
+      border-radius: 10px;
+      padding: 2rem 3rem;
+      color: #00ffff;
+      font-size: 1.4rem;
+      line-height: 1.8;
+      text-align: center;
+      box-shadow: 
+        0 0 30px rgba(0, 255, 255, 0.5),
+        inset 0 0 20px rgba(0, 255, 255, 0.1);
+      position: relative;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: subtitleFadeIn 0.5s ease-out forwards;
+      letter-spacing: 0.05rem;
+    }
+
+    .subtitle::before,
+    .subtitle::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #00ffff;
+    }
+
+    .subtitle::before {
+      top: 10px;
+      left: 10px;
+      border-right: none;
+      border-bottom: none;
+    }
+
+    .subtitle::after {
+      bottom: 10px;
+      right: 10px;
+      border-left: none;
+      border-top: none;
+    }
+
+    @keyframes subtitleFadeIn {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .subtitle.fade-out {
+      animation: subtitleFadeOut 0.5s ease-in forwards;
+    }
+
+    @keyframes subtitleFadeOut {
+      to {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+    }
+
+    /* 버튼 컨테이너 */
+    #button-container {
+      position: fixed;
+      bottom: 5%;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 2rem;
+      z-index: 100000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    #button-container.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .choice-button {
+      padding: 1rem 2rem;
+      font-size: 1.2rem;
+      font-family: 'Courier New', monospace;
+      background: rgba(0, 40, 60, 0.8);
+      color: #00ffff;
+      border: 2px solid #00ffff;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-radius: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1rem;
+    }
+
+    .choice-button:hover {
+      background: rgba(0, 255, 255, 0.2);
+      box-shadow: 
+        0 0 10px #00ffff,
+        0 0 20px rgba(0, 255, 255, 0.5);
+      transform: scale(1.05);
+    }
+
+    /* 키 가이드 */
+    #key-guide {
+      position: fixed;
+      top: 5%;
+      left: 5%;
+      background: rgba(0, 20, 40, 0.9);
+      border: 2px solid rgba(0, 255, 255, 0.5);
+      border-radius: 10px;
+      padding: 1.5rem;
+      color: #00ffff;
+      font-size: 1.1rem;
+      z-index: 10000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+    }
+
+    #key-guide.visible {
+      opacity: 1;
+    }
+
+    .key-item {
+      display: flex;
+      align-items: center;
+      margin: 0.5rem 0;
+      gap: 1rem;
+    }
+
+    .key {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      background: rgba(0, 255, 255, 0.1);
+      border: 2px solid #00ffff;
+      border-radius: 5px;
+      font-weight: bold;
+      min-width: 50px;
+      text-align: center;
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+    }
+
+    /* 페이드 아웃 오버레이 */
+    #fade-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      transition: opacity 2s ease;
+    }
+
+    #fade-overlay.active {
+      opacity: 1;
+    }
+
+    /* 엔딩 타이틀 */
+    #ending-title {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 5rem;
+      color: #00ffff;
+      text-shadow: 
+        0 0 20px #00ffff,
+        0 0 40px #00ffff,
+        0 0 60px #00ffff,
+        0 0 80px #0088ff;
+      letter-spacing: 0.5rem;
+      z-index: 10002;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 2s ease;
+      font-family: 'Courier New', monospace;
+    }
+
+    #ending-title.active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <!-- 시작 화면 -->
+  <div id="start-screen">
+    <h1 class="title">펜로즈의 정거장</h1>
+    <button class="start-button" onclick="startGame()">시작하기</button>
+  </div>
+
+  <!-- 자막 컨테이너 -->
+  <div id="subtitle-container"></div>
+
+  <!-- 선택 버튼 컨테이너 -->
+  <div id="button-container"></div>
+
+  <!-- 키 가이드 -->
+  <div id="key-guide">
+    <div class="key-item">
+      <span class="key">W</span>
+      <span>걷기</span>
+    </div>
+    <div class="key-item">
+      <span class="key">T</span>
+      <span>180° 회전</span>
+    </div>
+    <div class="key-item">
+      <span class="key">mouse pad</span>
+      <span>확대/축소</span>
+    </div>
+  </div>
+
+  <!-- 페이드 아웃 오버레이 -->
+  <div id="fade-overlay"></div>
+
+  <!-- 엔딩 타이틀 -->
+  <div id="ending-title">펜로즈의 정거장</div>
 
   <!-- JS 모듈 파일 -->
-  <script type="module" src="./moveOnMap.js"></script>
-</head>
+  <script type="module" src="./main.js"></script>
+  
+  <script>
+    // 전역 시나리오 제어 함수들
+    window.gameState = {
+      currentStep: 0,
+      walking: false,
+      walkStartTime: 0,
+      totalWalkTime: 0,
+      gameStarted: false
+    };
 
-<body>
+    function startGame() {
+      const startScreen = document.getElementById('start-screen');
+      startScreen.classList.add('hidden');
+      isStartScreenActive = false;
+      
+      setTimeout(() => {
+        window.gameState.gameStarted = true;
+        console.log('게임 시작, scenarioManager:', window.scenarioManager);
+        // main.js에서 scenario.start() 호출
+        if (window.scenarioManager) {
+          window.scenarioManager.start();
+        } else {
+          console.error('scenarioManager가 아직 초기화되지 않았습니다.');
+          // 재시도
+          setTimeout(() => {
+            if (window.scenarioManager) {
+              window.scenarioManager.start();
+            } else {
+              console.error('scenarioManager 로드 실패');
+            }
+          }, 1000);
+        }
+      }, 1000);
+    }
+
+    // 자막 표시 함수
+    window.showSubtitle = function(text, duration = 3000, callback = null, clickToSkip = true) {
+      console.log('=== showSubtitle 시작 ===');
+      console.log('텍스트:', text);
+      console.log('지속시간:', duration, 'ms');
+      console.log('클릭 가능:', clickToSkip);
+      
+      const container = document.getElementById('subtitle-container');
+      if (!container) {
+        console.error('subtitle-container를 찾을 수 없습니다.');
+        return Promise.resolve();
+      }
+      
+      // 기존 자막 제거
+      container.innerHTML = '';
+      
+      // 새 자막 생성
+      container.innerHTML = `<div class="subtitle">${text}</div>`;
+      console.log('자막 DOM 생성됨');
+      
+      // 자막이 실제로 DOM에 있는지 확인
+      const subtitle = container.querySelector('.subtitle');
+      if (subtitle) {
+        // 강제로 opacity를 1로 설정 (CSS 애니메이션 문제 해결)
+        setTimeout(() => {
+          subtitle.style.opacity = '1';
+          subtitle.style.transform = 'translateY(0)';
+        }, 10);
+        
+        console.log('자막 요소 확인됨, display:', window.getComputedStyle(subtitle).display);
+        console.log('자막 opacity 강제 설정');
+      } else {
+        console.error('자막 요소를 찾을 수 없음!');
+      }
+      
+      return new Promise((resolve) => {
+        let completed = false;
+        
+        const complete = () => {
+          if (completed) {
+            console.log('이미 완료됨 - 중복 호출 방지');
+            return;
+          }
+          completed = true;
+          
+          console.log('자막 종료 시작');
+          const subtitle = container.querySelector('.subtitle');
+          if (subtitle) {
+            subtitle.classList.add('fade-out');
+            setTimeout(() => {
+              container.innerHTML = '';
+              console.log('자막 DOM 제거됨');
+              if (callback) callback();
+              resolve();
+            }, 500);
+          } else {
+            console.log('자막이 이미 없음');
+            if (callback) callback();
+            resolve();
+          }
+        };
+        
+        // 클릭으로 넘어가기
+        if (clickToSkip) {
+          const subtitle = container.querySelector('.subtitle');
+          if (subtitle) {
+            subtitle.style.pointerEvents = 'all';
+            subtitle.style.cursor = 'pointer';
+            subtitle.addEventListener('click', () => {
+              console.log('자막 클릭됨!');
+              complete();
+            });
+            console.log('클릭 이벤트 리스너 추가됨');
+          }
+        }
+        
+        // 자동 넘어가기
+        console.log(duration + 'ms 후 자동 종료 예약');
+        setTimeout(() => {
+          console.log(duration + 'ms 경과 - 자막 자동 종료');
+          complete();
+        }, duration);
+      });
+    };
+
+    // 선택 버튼 표시 함수
+    window.showChoiceButtons = function(choices) {
+      const container = document.getElementById('button-container');
+      container.innerHTML = '';
+      
+      choices.forEach(choice => {
+        const button = document.createElement('button');
+        button.className = 'choice-button';
+        button.textContent = choice.text;
+        button.onclick = () => {
+          // 버튼 클릭 시 자막도 함께 숨김
+          const subtitleContainer = document.getElementById('subtitle-container');
+          if (subtitleContainer) {
+            const subtitle = subtitleContainer.querySelector('.subtitle');
+            if (subtitle) {
+              subtitle.classList.add('fade-out');
+              setTimeout(() => {
+                subtitleContainer.innerHTML = '';
+              }, 500);
+            }
+          }
+          
+          container.classList.remove('visible');
+          container.innerHTML = '';
+          if (choice.callback) choice.callback();
+        };
+        container.appendChild(button);
+      });
+      
+      setTimeout(() => {
+        container.classList.add('visible');
+      }, 100);
+    };
+
+    // 키 가이드 표시/숨김
+    window.showKeyGuide = function(show) {
+      const guide = document.getElementById('key-guide');
+      if (show) {
+        guide.classList.add('visible');
+      } else {
+        guide.classList.remove('visible');
+      }
+    };
+
+    // C 키 가이드 추가
+    window.addCKeyGuide = function () {
+      const guide = document.getElementById('key-guide');
+      if (!guide) return;
+
+      // 이미 있으면 중복 추가 방지
+      if (guide.querySelector('[data-key="c"]')) return;
+
+      const item = document.createElement('div');
+      item.className = 'key-item';
+      item.setAttribute('data-key', 'c');
+      item.innerHTML = `
+        <span class="key">C</span>
+        <span>시점 전환</span>
+      `;
+
+      guide.appendChild(item);
+    };
+
+    // C 키 가이드 제거 (엔딩용, 선택)
+    window.removeCKeyGuide = function () {
+      const guide = document.getElementById('key-guide');
+      if (!guide) return;
+
+      const item = guide.querySelector('[data-key="c"]');
+      if (item) item.remove();
+    };
+
+
+    // 페이드 아웃 + 엔딩 타이틀
+    window.fadeOut = function(callback) {
+      const overlay = document.getElementById('fade-overlay');
+      const title = document.getElementById('ending-title');
+
+      // 같이 사라질 UI들
+      const keyGuide = document.getElementById('key-guide');
+      const subtitle = document.getElementById('subtitle-container');
+      const buttons  = document.getElementById('button-container');
+
+      // ✅ HUD/자막/버튼 먼저 부드럽게 페이드
+      if (keyGuide) keyGuide.classList.add('fading-out');
+      if (subtitle) subtitle.classList.add('fading-out');
+      if (buttons)  buttons.classList.add('fading-out');
+
+      // 타이틀 표시
+      if (title) title.classList.add('active');
+
+      // 암전 시작
+      setTimeout(() => {
+        if (overlay) overlay.classList.add('active');
+
+        // 완전히 끝난 뒤 display none(선택이지만 깔끔)
+        setTimeout(() => {
+          if (keyGuide) keyGuide.style.display = 'none';
+          if (subtitle) subtitle.style.display = 'none';
+          if (buttons)  buttons.style.display = 'none';
+          if (callback) callback();
+        }, 1200);
+      }, 300);
+    };
+  </script>
 </body>
-
 </html>
